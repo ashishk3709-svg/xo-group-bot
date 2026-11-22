@@ -1,4 +1,4 @@
-import os, uuid
+import os, uuid, random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -9,6 +9,7 @@ def menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❌⭕ Tic-Tac-Toe", callback_data="select:ttt")],
         [InlineKeyboardButton("✊ Rock Paper Scissors", callback_data="select:rps")],
+        [InlineKeyboardButton("🔢 Number Guessing Battle", callback_data="select:num")],
     ])
 
 def join_menu():
@@ -81,18 +82,28 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "x": None, "o": None, "turn": None, "names": {}
             })
             text = "❌⭕ TIC-TAC-TOE\n\nA new match is open!\nPress JOIN GAME."
-        else:
+        elif q.data == "select:rps":
             g.update({
                 "type": "rps_setup", "p1": None, "p2": None,
                 "choices": {}, "names": {}
             })
             text = "✊ ROCK PAPER SCISSORS\n\nChoose points to win:"
+        else:
+            g.update({
+                "type": "number", "p1": None, "p2": None,
+                "turn": None, "secret": None, "names": {}
+            })
+            text = "🔢 NUMBER GUESSING BATTLE\n\nJoin the game and guess the secret number from 1 to 10!"
         if g["type"] == "rps_setup":
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("1 Point", callback_data="rpspoints:1"),
                  InlineKeyboardButton("3 Points", callback_data="rpspoints:3")],
                 [InlineKeyboardButton("5 Points", callback_data="rpspoints:5"),
                  InlineKeyboardButton("10 Points", callback_data="rpspoints:10")]
+            ])
+        elif g["type"] == "number":
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 JOIN GAME", callback_data="numjoin")]
             ])
         else:
             keyboard = join_menu()
@@ -205,6 +216,74 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 {g['names'][b]}: {labels[cb]}\n\n"
             f"{result}\n{scoreboard}\nNext round: choose!",
             reply_markup=rps_menu()
+        )
+        return
+
+    if q.data == "numjoin":
+        if not g or g.get("type") != "number":
+            return
+        if g["p1"] is None:
+            g["p1"] = uid
+            g["names"][uid] = name
+            await q.edit_message_text(
+                f"🔢 NUMBER GUESSING BATTLE\\n\\n{name} joined!\\nWaiting for Player 2...",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎮 JOIN GAME", callback_data="numjoin")]
+                ])
+            )
+            return
+        if g["p1"] == uid or g["p2"] is not None:
+            return
+        g["p2"] = uid
+        g["names"][uid] = name
+        g["secret"] = random.randint(1, 10)
+        g["turn"] = g["p1"]
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(str(n), callback_data=f"numguess:{n}") for n in range(1, 6)],
+            [InlineKeyboardButton(str(n), callback_data=f"numguess:{n}") for n in range(6, 11)]
+        ])
+        await q.edit_message_text(
+            f"🔢 NUMBER GUESSING BATTLE STARTED!\\n\\n"
+            f"👤 {g['names'][g['p1']]}\\n👤 {g['names'][g['p2']]}\\n\\n"
+            f"🎯 {g['names'][g['turn']]}: Guess the number (1–10)!",
+            reply_markup=keyboard
+        )
+        return
+
+    if q.data.startswith("numguess:"):
+        if not g or g.get("type") != "number" or g.get("p2") is None:
+            return
+        if uid != g["turn"]:
+            return
+        guess = int(q.data.split(":")[1])
+        if guess == g["secret"]:
+            winner = uid
+            loser = g["p2"] if uid == g["p1"] else g["p1"]
+            streaks[winner] = streaks.get(winner, 0) + 1
+            streaks[loser] = 0
+            games.pop(chat, None)
+            await q.edit_message_text(
+                f"🔢 NUMBER GUESSING BATTLE - RESULT\\n\\n"
+                f"🎯 Secret number: {g['secret']}\\n"
+                f"🏆 Winner: {g['names'][winner]}!\\n"
+                f"🔥 Winning streak: {streaks[winner]}\\n"
+                f"💔 {g['names'][loser]} streak: 0\\n\\n"
+                f"Play again with /play"
+            )
+            return
+
+        hint = "Higher! ⬆️" if guess < g["secret"] else "Lower! ⬇️"
+        g["turn"] = g["p2"] if uid == g["p1"] else g["p1"]
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(str(n), callback_data=f"numguess:{n}") for n in range(1, 6)],
+            [InlineKeyboardButton(str(n), callback_data=f"numguess:{n}") for n in range(6, 11)]
+        ])
+        await q.edit_message_text(
+            f"🔢 NUMBER GUESSING BATTLE\\n\\n"
+            f"{g['names'][uid]} guessed {guess}.\\n"
+            f"{hint}\\n\\n"
+            f"➡️ Next turn: {g['names'][g['turn']]}",
+            reply_markup=keyboard
         )
         return
 
