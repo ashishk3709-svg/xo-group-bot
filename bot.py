@@ -83,17 +83,34 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "❌⭕ TIC-TAC-TOE\n\nA new match is open!\nPress JOIN GAME."
         else:
             g.update({
-                "type": "rps", "p1": None, "p2": None,
+                "type": "rps_setup", "p1": None, "p2": None,
                 "choices": {}, "names": {}
             })
-            text = "✊ ROCK PAPER SCISSORS\n\nA new match is open!\nTwo players can join."
-        if g["type"] == "rps":
+            text = "✊ ROCK PAPER SCISSORS\n\nChoose points to win:"
+        if g["type"] == "rps_setup":
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎮 JOIN GAME", callback_data="rpsjoin")]
+                [InlineKeyboardButton("1 Point", callback_data="rpspoints:1"),
+                 InlineKeyboardButton("3 Points", callback_data="rpspoints:3")],
+                [InlineKeyboardButton("5 Points", callback_data="rpspoints:5"),
+                 InlineKeyboardButton("10 Points", callback_data="rpspoints:10")]
             ])
         else:
             keyboard = join_menu()
         await q.edit_message_text(text, reply_markup=keyboard)
+        return
+
+    if q.data.startswith("rpspoints:"):
+        if not g or g.get("type") != "rps_setup" or uid != g["creator"]:
+            await q.answer("Only the match creator can choose points.", show_alert=True)
+            return
+        g["target"] = int(q.data.split(":")[1])
+        g["type"] = "rps"
+        await q.edit_message_text(
+            f"✊ ROCK PAPER SCISSORS\n\nFirst to {g['target']} point(s) wins!\n\nWaiting for two players...",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 JOIN GAME", callback_data="rpsjoin")]
+            ])
+        )
         return
 
     if q.data == "rpsjoin":
@@ -147,25 +164,47 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         labels = {"rock": "✊ Rock", "paper": "✋ Paper", "scissors": "✌️ Scissors"}
 
         if ca == cb:
-            result = "🤝 IT'S A DRAW!"
+            result = "🤝 ROUND DRAW! No points awarded."
         else:
             wins = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
             winner = a if wins[ca] == cb else b
             loser = b if winner == a else a
-            streaks[winner] = streaks.get(winner, 0) + 1
-            streaks[loser] = 0
-            result = (
-                f"🏆 {g['names'][winner]} WINS!\n"
-                f"🔥 Winning streak: {streaks[winner]}\n"
-                f"💔 {g['names'][loser]} streak: 0"
-            )
+            g.setdefault("scores", {a: 0, b: 0})
+            g["scores"][winner] += 1
+            result = f"🏆 {g['names'][winner]} wins this round!"
 
-        games.pop(chat, None)
+        score = g.setdefault("scores", {a: 0, b: 0})
+        scoreboard = (
+            f"📊 SCORE\n{g['names'][a]}: {score[a]} - "
+            f"{g['names'][b]}: {score[b]}\n"
+        )
+
+        if score[a] >= g["target"] or score[b] >= g["target"]:
+            match_winner = a if score[a] >= g["target"] else b
+            match_loser = b if match_winner == a else a
+            streaks[match_winner] = streaks.get(match_winner, 0) + 1
+            streaks[match_loser] = 0
+            result += (
+                f"\n\n🏆 MATCH WINNER: {g['names'][match_winner]}!"
+                f"\n🔥 Winning streak: {streaks[match_winner]}"
+                f"\n💔 {g['names'][match_loser]} streak: 0"
+            )
+            games.pop(chat, None)
+            await q.edit_message_text(
+                f"✊ ROCK PAPER SCISSORS - FINAL RESULT\n\n"
+                f"👤 {g['names'][a]}: {labels[ca]}\n"
+                f"👤 {g['names'][b]}: {labels[cb]}\n\n"
+                f"{result}\n{scoreboard}\nPlay again with /play"
+            )
+            return
+
+        g["choices"] = {}
         await q.edit_message_text(
-            f"✊ ROCK PAPER SCISSORS - RESULT\n\n"
+            f"✊ ROCK PAPER SCISSORS - ROUND RESULT\n\n"
             f"👤 {g['names'][a]}: {labels[ca]}\n"
             f"👤 {g['names'][b]}: {labels[cb]}\n\n"
-            f"{result}\n\nPlay again with /play"
+            f"{result}\n{scoreboard}\nNext round: choose!",
+            reply_markup=rps_menu()
         )
         return
 
