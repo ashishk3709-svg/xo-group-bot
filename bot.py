@@ -226,7 +226,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             g["p1"] = uid
             g["names"][uid] = name
             await q.edit_message_text(
-                f"🔢 NUMBER GUESSING BATTLE\\n\\n{name} joined!\\nWaiting for Player 2...",
+                f"🔢 NUMBER GUESSING BATTLE\n\n{name} joined!\nWaiting for Player 2...",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🎮 JOIN GAME", callback_data="numjoin")]
                 ])
@@ -243,8 +243,8 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(str(n), callback_data=f"numguess:{n}") for n in range(6, 11)]
         ])
         await q.edit_message_text(
-            f"🔢 NUMBER GUESSING BATTLE STARTED!\\n\\n"
-            f"👤 {g['names'][g['p1']]}\\n👤 {g['names'][g['p2']]}\\n\\n"
+            f"🔢 NUMBER GUESSING BATTLE STARTED!\n\n"
+            f"👤 {g['names'][g['p1']]}\n👤 {g['names'][g['p2']]}\n\n"
             f"🎯 {g['names'][g['turn']]}: Guess the number (1–10)!",
             reply_markup=keyboard
         )
@@ -263,11 +263,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             streaks[loser] = 0
             games.pop(chat, None)
             await q.edit_message_text(
-                f"🔢 NUMBER GUESSING BATTLE - RESULT\\n\\n"
-                f"🎯 Secret number: {g['secret']}\\n"
-                f"🏆 Winner: {g['names'][winner]}!\\n"
-                f"🔥 Winning streak: {streaks[winner]}\\n"
-                f"💔 {g['names'][loser]} streak: 0\\n\\n"
+                f"🔢 NUMBER GUESSING BATTLE - RESULT\n\n"
+                f"🎯 Secret number: {g['secret']}\n"
+                f"🏆 Winner: {g['names'][winner]}!\n"
+                f"🔥 Winning streak: {streaks[winner]}\n"
+                f"💔 {g['names'][loser]} streak: 0\n\n"
                 f"Play again with /play"
             )
             return
@@ -279,9 +279,9 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(str(n), callback_data=f"numguess:{n}") for n in range(6, 11)]
         ])
         await q.edit_message_text(
-            f"🔢 NUMBER GUESSING BATTLE\\n\\n"
-            f"{g['names'][uid]} guessed {guess}.\\n"
-            f"{hint}\\n\\n"
+            f"🔢 NUMBER GUESSING BATTLE\n\n"
+            f"{g['names'][uid]} guessed {guess}.\n"
+            f"{hint}\n\n"
             f"➡️ Next turn: {g['names'][g['turn']]}",
             reply_markup=keyboard
         )
