@@ -1,4 +1,7 @@
 import os, uuid, random
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+from telegram import InputMediaPhoto
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -64,6 +67,105 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=menu()
     )
     g["message"] = msg.message_id
+
+
+def render_ludo_poster(g):
+    W = H = 800
+    img = Image.new("RGB", (W, H), "#101827")
+    d = ImageDraw.Draw(img)
+    font = ImageFont.load_default()
+
+    colors = ["#ef4444", "#22c55e", "#eab308", "#3b82f6"]
+    names = ["RED", "GREEN", "YELLOW", "BLUE"]
+
+    d.rounded_rectangle((18, 18, 782, 782), radius=35, fill="#f8fafc")
+    d.text((400, 42), "LUDO MINI ARENA", fill="#172554", anchor="mm", font=font)
+    d.text((400, 72), "LIVE GAME BOARD", fill="#475569", anchor="mm", font=font)
+
+    # Four player home areas
+    homes = [(45, 115, 245, 285), (555, 115, 755, 285),
+             (45, 515, 245, 685), (555, 515, 755, 685)]
+    home_centres = [(145, 200), (655, 200), (145, 600), (655, 600)]
+
+    for i, (x1, y1, x2, y2) in enumerate(homes):
+        d.rounded_rectangle((x1, y1, x2, y2), radius=22,
+                            fill=colors[i], outline="#1e293b", width=4)
+        d.text(((x1+x2)//2, y1+22), names[i], fill="white",
+               anchor="mm", font=font)
+        for j in range(4):
+            x = x1 + 55 + (j % 2) * 90
+            y = y1 + 75 + (j // 2) * 65
+            d.ellipse((x-19, y-19, x+19, y+19),
+                      fill="#ffffff", outline="#1e293b", width=3)
+
+    # Twenty spaces on a circular race track
+    cx, cy, rx, ry = 400, 400, 220, 220
+    coords = []
+    for i in range(20):
+        import math
+        a = -math.pi/2 + 2*math.pi*i/20
+        coords.append((cx + rx*math.cos(a), cy + ry*math.sin(a)))
+
+    for i, (x, y) in enumerate(coords):
+        r = 24
+        fill = "#fde68a" if i in {0, 5, 10, 15} else "#e2e8f0"
+        d.ellipse((x-r, y-r, x+r, y+r), fill=fill,
+                  outline="#334155", width=3)
+        d.text((x, y), str(i), fill="#0f172a", anchor="mm", font=font)
+
+    d.ellipse((325, 325, 475, 475), fill="#172554", outline="#0f172a", width=5)
+    d.text((400, 375), "FINISH", fill="white", anchor="mm", font=font)
+    d.text((400, 420), "🏁", fill="white", anchor="mm", font=font)
+
+    players = g.get("players", [])
+    positions = g.get("positions", {})
+    for pi, uid in enumerate(players):
+        col = colors[pi % 4]
+        for ti, pos in enumerate(positions.get(uid, [-1]*4)):
+            if pos == -1:
+                hx, hy = home_centres[pi % 4]
+                x = hx + (-25 if ti % 2 == 0 else 25)
+                y = hy + (-20 if ti < 2 else 20)
+            elif pos >= 20:
+                x = 400 + (ti % 2 * 24 - 12)
+                y = 400 + (ti // 2 * 24 - 12)
+            else:
+                x, y = coords[pos]
+                x += (ti % 2 * 13 - 6)
+                y += (ti // 2 * 13 - 6)
+            d.ellipse((x-13, y-13, x+13, y+13),
+                      fill=col, outline="#111827", width=3)
+            d.text((x, y), str(ti+1), fill="white",
+                   anchor="mm", font=font)
+
+    # Player legend
+    for i, uid in enumerate(players):
+        y = 720 + (i//2)*22
+        x = 75 + (i%2)*350
+        d.ellipse((x, y-7, x+14, y+7), fill=colors[i % 4])
+        d.text((x+22, y), str(g["names"].get(uid, "Player"))[:24],
+               fill="#0f172a", anchor="lm", font=font)
+
+    out = BytesIO()
+    img.save(out, format="PNG")
+    out.name = "ludo_board.png"
+    out.seek(0)
+    return out
+
+
+async def show_ludo(q, g, caption, keyboard=None):
+    poster = render_ludo_poster(g)
+    if q.message.photo:
+        await q.edit_message_media(
+            media=InputMediaPhoto(media=poster, caption=caption),
+            reply_markup=keyboard
+        )
+    else:
+        await q.message.delete()
+        await q.message.reply_photo(
+            photo=poster, caption=caption, reply_markup=keyboard
+        )
+
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -237,6 +339,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
 
+
     if q.data == "ludojoin":
         if not g or g.get("type") != "ludo":
             return
@@ -249,11 +352,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         g["players"].append(uid)
         g["names"][uid] = name
         g["positions"][uid] = [-1, -1, -1, -1]
-        await q.edit_message_text(
-            "🎲 LUDO MINI\n\n" +
-            "\n".join(f"{i+1}. {g['names'][u]}" for i, u in enumerate(g["players"])) +
-            "\n\nAt least 2 players needed. Creator can start.",
-            reply_markup=InlineKeyboardMarkup([
+        roster = "\n".join(f"{i+1}. {g['names'][u]}" for i, u in enumerate(g["players"]))
+        await show_ludo(
+            q, g,
+            "🎲 LUDO MINI — PLAYERS JOINED\n\n" + roster +
+            "\n\nNeed at least 2 players. Creator can start.",
+            InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎮 JOIN LUDO", callback_data="ludojoin")],
                 [InlineKeyboardButton("▶️ START MATCH", callback_data="ludostart")]
             ])
@@ -269,9 +373,9 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         g["turn"] = 0
         player = g["players"][0]
-        await q.edit_message_text(
-            f"🎲 LUDO MINI STARTED!\n\n{g['names'][player]}'s turn.",
-            reply_markup=InlineKeyboardMarkup([
+        await show_ludo(
+            q, g, f"🎲 LUDO MINI STARTED!\n\n{g['names'][player]}'s turn.",
+            InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎲 ROLL DICE", callback_data="ludoroll")]
             ])
         )
@@ -287,7 +391,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if g["roll"] is not None:
             await q.answer("Choose a token first!", show_alert=True)
             return
-        import random
         roll = random.randint(1, 6)
         g["roll"] = roll
         movable = [i for i, pos in enumerate(g["positions"][player])
@@ -296,16 +399,16 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             g["roll"] = None
             g["turn"] = (g["turn"] + 1) % len(g["players"])
             nxt = g["players"][g["turn"]]
-            await q.edit_message_text(
-                f"🎲 {g['names'][player]} rolled {roll}. No move!\n\n{g['names'][nxt]}'s turn.",
-                reply_markup=InlineKeyboardMarkup([
+            await show_ludo(
+                q, g, f"🎲 {g['names'][player]} rolled {roll}. No move!\n\n{g['names'][nxt]}'s turn.",
+                InlineKeyboardMarkup([
                     [InlineKeyboardButton("🎲 ROLL DICE", callback_data="ludoroll")]
                 ])
             )
             return
-        await q.edit_message_text(
-            f"🎲 {g['names'][player]} rolled {roll}. Choose token:",
-            reply_markup=InlineKeyboardMarkup([
+        await show_ludo(
+            q, g, f"🎲 {g['names'][player]} rolled {roll}. Choose a token:",
+            InlineKeyboardMarkup([
                 [InlineKeyboardButton(f"Token {i+1}", callback_data=f"ludomove:{i}")]
                 for i in movable
             ])
@@ -342,22 +445,26 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if opponent != player:
                     streaks[opponent] = 0
             games.pop(chat, None)
-            await q.edit_message_text(
-                f"🎲 LUDO FINISHED!\n\n🏆 Winner: {g['names'][player]}!\n"
-                f"🔥 Winning streak: {streaks[player]}\n\nPlay again with /play"
+            await show_ludo(
+                q, g,
+                f"🏆 LUDO FINISHED!\n\nWinner: {g['names'][player]}!\n🔥 Winning streak: {streaks[player]}",
+                None
             )
             return
         if roll != 6:
             g["turn"] = (g["turn"] + 1) % len(g["players"])
         nxt = g["players"][g["turn"]]
         status = "\n".join(
-            f"{g['names'][u]}: " + " | ".join("🏁" if x == 20 else "🏠" if x == -1 else str(x) for x in g["positions"][u])
-            for u in g["players"]
+            f"{g['names'][u]}: " + " | ".join(
+                "🏁" if x == 20 else "🏠" if x == -1 else str(x)
+                for x in g["positions"][u]
+            ) for u in g["players"]
         )
         extra = "\n🎯 Captured: " + ", ".join(captured) if captured else ""
-        await q.edit_message_text(
+        await show_ludo(
+            q, g,
             f"🎲 LUDO MINI\n\n{status}{extra}\n\n➡️ {g['names'][nxt]}'s turn!",
-            reply_markup=InlineKeyboardMarkup([
+            InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎲 ROLL DICE", callback_data="ludoroll")]
             ])
         )
