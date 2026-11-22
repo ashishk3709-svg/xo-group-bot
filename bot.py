@@ -58,7 +58,7 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     games[chat.id] = g
     msg = await update.message.reply_text(
         "🎮 XO GAME ARENA\n\nWhich game do you want to play?",
-        reply_markup=join_menu()
+        reply_markup=menu()
     )
     g["message"] = msg.message_id
 
