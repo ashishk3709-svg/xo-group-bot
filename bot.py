@@ -10,6 +10,8 @@ def menu():
         [InlineKeyboardButton("❌⭕ Tic-Tac-Toe", callback_data="select:ttt")],
         [InlineKeyboardButton("✊ Rock Paper Scissors", callback_data="select:rps")],
         [InlineKeyboardButton("🔢 Number Guessing Battle", callback_data="select:num")],
+        [InlineKeyboardButton("🎲 Ludo Mini", callback_data="select:ludo")],
+        [InlineKeyboardButton("🔢 2048 Duel", callback_data="select:2048")],
     ])
 
 def join_menu():
@@ -88,6 +90,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "choices": {}, "names": {}
             })
             text = "✊ ROCK PAPER SCISSORS\n\nChoose points to win:"
+        elif q.data == "select:ludo":
+            g.update({"type": "ludo", "players": [], "positions": {}, "names": {}, "turn": 0, "roll": None})
+            text = "🎲 LUDO MINI\n\n2–4 players can join. Four tokens each. Join and wait for the creator to start!"
+        elif q.data == "select:2048":
+            g.update({"type": "2048_setup", "p1": None, "p2": None, "names": {}})
+            text = "🔢 2048 DUEL\n\nTwo players compete on one shared board. Take turns sliding tiles!"
         else:
             g.update({
                 "type": "number", "p1": None, "p2": None,
@@ -104,6 +112,15 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif g["type"] == "number":
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎮 JOIN GAME", callback_data="numjoin")]
+            ])
+        elif g["type"] == "ludo":
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 JOIN LUDO", callback_data="ludojoin")],
+                [InlineKeyboardButton("▶️ START MATCH", callback_data="ludostart")]
+            ])
+        elif g["type"] == "2048_setup":
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 JOIN 2048", callback_data="2048join")]
             ])
         else:
             keyboard = join_menu()
@@ -216,6 +233,247 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 {g['names'][b]}: {labels[cb]}\n\n"
             f"{result}\n{scoreboard}\nNext round: choose!",
             reply_markup=rps_menu()
+        )
+        return
+
+
+    if q.data == "ludojoin":
+        if not g or g.get("type") != "ludo":
+            return
+        if uid in g["players"]:
+            await q.answer("Already joined!", show_alert=True)
+            return
+        if len(g["players"]) >= 4:
+            await q.answer("Ludo is full!", show_alert=True)
+            return
+        g["players"].append(uid)
+        g["names"][uid] = name
+        g["positions"][uid] = [-1, -1, -1, -1]
+        await q.edit_message_text(
+            "🎲 LUDO MINI\n\n" +
+            "\n".join(f"{i+1}. {g['names'][u]}" for i, u in enumerate(g["players"])) +
+            "\n\nAt least 2 players needed. Creator can start.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 JOIN LUDO", callback_data="ludojoin")],
+                [InlineKeyboardButton("▶️ START MATCH", callback_data="ludostart")]
+            ])
+        )
+        return
+
+    if q.data == "ludostart":
+        if not g or g.get("type") != "ludo" or uid != g["creator"]:
+            await q.answer("Only creator can start.", show_alert=True)
+            return
+        if len(g["players"]) < 2:
+            await q.answer("Need at least 2 players.", show_alert=True)
+            return
+        g["turn"] = 0
+        player = g["players"][0]
+        await q.edit_message_text(
+            f"🎲 LUDO MINI STARTED!\n\n{g['names'][player]}'s turn.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎲 ROLL DICE", callback_data="ludoroll")]
+            ])
+        )
+        return
+
+    if q.data == "ludoroll":
+        if not g or g.get("type") != "ludo":
+            return
+        player = g["players"][g["turn"]]
+        if uid != player:
+            await q.answer("Wait for your turn!", show_alert=True)
+            return
+        if g["roll"] is not None:
+            await q.answer("Choose a token first!", show_alert=True)
+            return
+        import random
+        roll = random.randint(1, 6)
+        g["roll"] = roll
+        movable = [i for i, pos in enumerate(g["positions"][player])
+                   if pos < 20 and (pos >= 0 or roll == 6)]
+        if not movable:
+            g["roll"] = None
+            g["turn"] = (g["turn"] + 1) % len(g["players"])
+            nxt = g["players"][g["turn"]]
+            await q.edit_message_text(
+                f"🎲 {g['names'][player]} rolled {roll}. No move!\n\n{g['names'][nxt]}'s turn.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎲 ROLL DICE", callback_data="ludoroll")]
+                ])
+            )
+            return
+        await q.edit_message_text(
+            f"🎲 {g['names'][player]} rolled {roll}. Choose token:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"Token {i+1}", callback_data=f"ludomove:{i}")]
+                for i in movable
+            ])
+        )
+        return
+
+    if q.data.startswith("ludomove:"):
+        if not g or g.get("type") != "ludo" or g.get("roll") is None:
+            return
+        player = g["players"][g["turn"]]
+        if uid != player:
+            await q.answer("Not your turn!", show_alert=True)
+            return
+        token = int(q.data.split(":")[1])
+        positions = g["positions"][player]
+        roll = g["roll"]
+        if token not in range(4) or positions[token] >= 20 or (positions[token] == -1 and roll != 6):
+            await q.answer("Invalid token.", show_alert=True)
+            return
+        positions[token] = 0 if positions[token] == -1 else min(20, positions[token] + roll)
+        landed = positions[token]
+        captured = []
+        if landed < 20 and landed not in {0, 5, 10, 15}:
+            for opponent in g["players"]:
+                if opponent != player:
+                    for i, pos in enumerate(g["positions"][opponent]):
+                        if pos == landed:
+                            g["positions"][opponent][i] = -1
+                            captured.append(g["names"][opponent])
+        g["roll"] = None
+        if all(pos == 20 for pos in positions):
+            streaks[player] = streaks.get(player, 0) + 1
+            for opponent in g["players"]:
+                if opponent != player:
+                    streaks[opponent] = 0
+            games.pop(chat, None)
+            await q.edit_message_text(
+                f"🎲 LUDO FINISHED!\n\n🏆 Winner: {g['names'][player]}!\n"
+                f"🔥 Winning streak: {streaks[player]}\n\nPlay again with /play"
+            )
+            return
+        if roll != 6:
+            g["turn"] = (g["turn"] + 1) % len(g["players"])
+        nxt = g["players"][g["turn"]]
+        status = "\n".join(
+            f"{g['names'][u]}: " + " | ".join("🏁" if x == 20 else "🏠" if x == -1 else str(x) for x in g["positions"][u])
+            for u in g["players"]
+        )
+        extra = "\n🎯 Captured: " + ", ".join(captured) if captured else ""
+        await q.edit_message_text(
+            f"🎲 LUDO MINI\n\n{status}{extra}\n\n➡️ {g['names'][nxt]}'s turn!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎲 ROLL DICE", callback_data="ludoroll")]
+            ])
+        )
+        return
+
+    if q.data == "2048join":
+        if not g or g.get("type") != "2048_setup":
+            return
+        if uid == g["p1"] or uid == g["p2"]:
+            return
+        if g["p1"] is None:
+            g["p1"] = uid
+            g["names"][uid] = name
+            await q.edit_message_text(
+                f"🔢 2048 DUEL\n\n{name} joined! Waiting for Player 2...",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎮 JOIN 2048", callback_data="2048join")]
+                ])
+            )
+            return
+        g["p2"] = uid
+        g["names"][uid] = name
+        import random
+        b = [[0]*4 for _ in range(4)]
+        for _ in range(2):
+            r, c = random.choice([(r,c) for r in range(4) for c in range(4) if b[r][c] == 0])
+            b[r][c] = 2
+        g.update({"type": "2048", "board": b, "scores": {g["p1"]: 0, g["p2"]: 0}, "turn": g["p1"]})
+        await q.edit_message_text(
+            f"🔢 2048 DUEL STARTED!\n\n{g['names'][g['turn']]}'s turn.\n\n" +
+            "\n".join(" ".join(str(x or "·") for x in row) for row in b),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬆️", callback_data="2048:up")],
+                [InlineKeyboardButton("⬅️", callback_data="2048:left"),
+                 InlineKeyboardButton("⬇️", callback_data="2048:down"),
+                 InlineKeyboardButton("➡️", callback_data="2048:right")]
+            ])
+        )
+        return
+
+    if q.data.startswith("2048:"):
+        if not g or g.get("type") != "2048":
+            return
+        if uid != g["turn"]:
+            await q.answer("Wait for your turn!", show_alert=True)
+            return
+        direction = q.data.split(":")[1]
+        b = g["board"]
+        old = [row[:] for row in b]
+
+        def compress(line):
+            vals = [x for x in line if x]
+            out, gained, i = [], 0, 0
+            while i < len(vals):
+                if i+1 < len(vals) and vals[i] == vals[i+1]:
+                    v = vals[i]*2
+                    out.append(v)
+                    gained += v
+                    i += 2
+                else:
+                    out.append(vals[i])
+                    i += 1
+            return out + [0]*(4-len(out)), gained
+
+        gain_total = 0
+        if direction in ("left", "right"):
+            for r in range(4):
+                line = b[r][:] if direction == "left" else b[r][::-1]
+                new, gain = compress(line)
+                b[r] = new if direction == "left" else new[::-1]
+                gain_total += gain
+        else:
+            for c in range(4):
+                line = [b[r][c] for r in range(4)]
+                if direction == "down":
+                    line.reverse()
+                new, gain = compress(line)
+                if direction == "down":
+                    new.reverse()
+                for r in range(4):
+                    b[r][c] = new[r]
+                gain_total += gain
+
+        if b == old:
+            await q.answer("No tiles moved that way!", show_alert=True)
+            return
+        g["scores"][uid] += gain_total
+        import random
+        empty = [(r,c) for r in range(4) for c in range(4) if b[r][c] == 0]
+        if empty:
+            r,c = random.choice(empty)
+            b[r][c] = 4 if random.random() < .1 else 2
+        if any(2048 in row for row in b):
+            winner = uid
+            loser = g["p2"] if uid == g["p1"] else g["p1"]
+            streaks[winner] = streaks.get(winner, 0) + 1
+            streaks[loser] = 0
+            games.pop(chat, None)
+            await q.edit_message_text(
+                f"🔢 2048 DUEL FINISHED!\n\n🏆 {g['names'][winner]} reached 2048!\n"
+                f"🔥 Winning streak: {streaks[winner]}\n\nPlay again with /play"
+            )
+            return
+        g["turn"] = g["p2"] if uid == g["p1"] else g["p1"]
+        await q.edit_message_text(
+            "🔢 2048 DUEL\n\n" +
+            "\n".join(" ".join(str(x or "·") for x in row) for row in b) +
+            f"\n\n📊 {g['names'][g['p1']]}: {g['scores'][g['p1']]}"
+            f"\n📊 {g['names'][g['p2']]}: {g['scores'][g['p2']]}"
+            f"\n\n➡️ {g['names'][g['turn']]}'s turn!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬆️", callback_data="2048:up")],
+                [InlineKeyboardButton("⬅️", callback_data="2048:left"),
+                 InlineKeyboardButton("⬇️", callback_data="2048:down"),
+                 InlineKeyboardButton("➡️", callback_data="2048:right")]
+            ])
         )
         return
 
