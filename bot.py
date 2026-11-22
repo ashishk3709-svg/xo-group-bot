@@ -37,7 +37,7 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     g = {
-        "id": uuid.uuid4().hex[:8], "b": [""]*9,
+        "id": uuid.uuid4().hex[:8], "creator": update.effective_user.id, "b": [""]*9,
         "x": None, "o": None, "turn": None,
         "names": {}, "chat": chat.id
     }
@@ -119,6 +119,33 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=board(g)
         )
 
+
+async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type not in ("group", "supergroup"):
+        await update.message.reply_text("Use /end in the game group.")
+        return
+
+    g = games.get(chat.id)
+    if not g:
+        await update.message.reply_text("No active match to end.")
+        return
+
+    allowed = user.id in (g["creator"], g["x"], g["o"])
+
+    if not allowed:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        allowed = member.status in ("administrator", "creator")
+
+    if not allowed:
+        await update.message.reply_text("Only the match creator, players, or group admins can end this match.")
+        return
+
+    games.pop(chat.id, None)
+    await update.message.reply_text("🛑 MATCH ENDED!\n\nA new match can be started with /play.")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎮 XO ARENA\n\nAdd me to a group and use /play to start Tic-Tac-Toe!"
@@ -131,6 +158,7 @@ def main():
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play))
+    app.add_handler(CommandHandler("end", end_game))
     app.add_handler(CallbackQueryHandler(buttons))
     print("XO GROUP BOT IS RUNNING!")
     app.run_polling()
