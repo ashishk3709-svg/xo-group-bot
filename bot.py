@@ -162,8 +162,9 @@ async def show_ludo(q, g, caption, keyboard=None):
         )
     else:
         await q.message.delete()
-        await q.message.reply_photo(
-            photo=poster, caption=caption, reply_markup=keyboard
+        await context.bot.send_photo(
+            chat_id=q.message.chat_id, photo=poster,
+            caption=caption, reply_markup=keyboard
         )
 
 
