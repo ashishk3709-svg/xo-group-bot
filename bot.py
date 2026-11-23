@@ -170,7 +170,8 @@ async def show_ludo(q, g, caption, keyboard=None):
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    await q.answer()
+    if not (q.data in ("ludojoin", "ludostart", "ludoroll") or q.data.startswith("ludomove:")):
+        await q.answer()
     chat = q.message.chat_id
     g = games.get(chat)
     uid = q.from_user.id
@@ -343,6 +344,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if q.data == "ludojoin":
         if not g or g.get("type") != "ludo":
+            await q.answer("No active Ludo game.", show_alert=True)
             return
         if uid in g["players"]:
             await q.answer("Already joined!", show_alert=True)
@@ -350,6 +352,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(g["players"]) >= 4:
             await q.answer("Ludo is full!", show_alert=True)
             return
+        await q.answer()
         g["players"].append(uid)
         g["names"][uid] = name
         g["positions"][uid] = [-1, -1, -1, -1]
@@ -372,6 +375,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(g["players"]) < 2:
             await q.answer("Need at least 2 players.", show_alert=True)
             return
+        await q.answer()
         g["turn"] = 0
         player = g["players"][0]
         await show_ludo(
@@ -384,6 +388,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if q.data == "ludoroll":
         if not g or g.get("type") != "ludo":
+            await q.answer("No active Ludo game.", show_alert=True)
             return
         player = g["players"][g["turn"]]
         if uid != player:
@@ -392,6 +397,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if g["roll"] is not None:
             await q.answer("Choose a token first!", show_alert=True)
             return
+        await q.answer()
         roll = random.randint(1, 6)
         g["roll"] = roll
         movable = [i for i, pos in enumerate(g["positions"][player])
@@ -418,6 +424,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if q.data.startswith("ludomove:"):
         if not g or g.get("type") != "ludo" or g.get("roll") is None:
+            await q.answer("No active Ludo move.", show_alert=True)
             return
         player = g["players"][g["turn"]]
         if uid != player:
@@ -429,6 +436,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if token not in range(4) or positions[token] >= 20 or (positions[token] == -1 and roll != 6):
             await q.answer("Invalid token.", show_alert=True)
             return
+        await q.answer()
         positions[token] = 0 if positions[token] == -1 else min(20, positions[token] + roll)
         landed = positions[token]
         captured = []
