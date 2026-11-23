@@ -5,6 +5,54 @@ from telegram import InputMediaPhoto
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+
+def td_pools():
+    topics = [
+        "school life","friendship","your childhood","your hobbies","your dreams",
+        "your funniest memory","your favourite person","your personality",
+        "your favourite game","your favourite movie","your favourite song",
+        "your biggest achievement","your most awkward moment","your future",
+        "your ideal friendship","your favourite food","your daily routine",
+        "your secret talent","your favourite teacher","your best quality",
+        "your worst habit","your dream holiday","your happiest day",
+        "your biggest inspiration","your online life","your gaming life",
+        "your school memories","your confidence","your biggest motivation",
+        "your favourite sport","your favourite app","your perfect weekend",
+        "your funniest nickname","your favourite season","your dream house",
+        "your favourite celebration","your biggest lesson","your first impression",
+        "your ideal relationship","your crush preferences","your definition of love",
+        "your favourite cartoon","your favourite book","your dream adventure",
+        "your best decision","your funniest chat","your childhood memories",
+        "your favourite subject","your personal goals","your friendship secrets"
+    ]
+    tf = [
+        "What is your funniest story about {}?",
+        "What is one thing you would change about {}?",
+        "What makes you happiest about {}?",
+        "What is something people misunderstand about {}?",
+        "What is your honest opinion about {}?",
+        "What is your favourite memory of {}?",
+        "What is one lesson you learned from {}?",
+        "What would you improve about {}?",
+        "What is the most surprising thing about {}?",
+        "What is one thing you appreciate about {}?"
+    ]
+    df = [
+        "Describe {} using exactly five words in this group.",
+        "Make a two-line poem about {} and post it here.",
+        "Explain {} using only emojis in this group.",
+        "Write a funny headline about {} and share it here.",
+        "Give {} a hilarious nickname and post it here.",
+        "Make a mini-riddle about {} for the group.",
+        "Write a dramatic one-line speech about {} here.",
+        "Describe {} like a movie trailer in this group.",
+        "Create a funny slogan about {} and post it here.",
+        "Send a three-emoji story about {} in this group."
+    ]
+    return ([f.format(t) for f in tf for t in topics],
+            [f.format(t) for f in df for t in topics])
+
+
 games = {}
 streaks = {}
 
@@ -521,41 +569,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎲 LUDO MINI\n\n{status}{extra}\n\n➡️ {g['names'][nxt]}'s turn!",
             InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎲 ROLL DICE", callback_data="ludoroll")]
-            ])
-        )
-        return
-
-    if q.data == "2048join":
-        if not g or g.get("type") != "2048_setup":
-            return
-        if uid == g["p1"] or uid == g["p2"]:
-            return
-        if g["p1"] is None:
-            g["p1"] = uid
-            g["names"][uid] = name
-            await q.edit_message_text(
-                f"🔢 2048 DUEL\n\n{name} joined! Waiting for Player 2...",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🎮 JOIN 2048", callback_data="2048join")]
-                ])
-            )
-            return
-        g["p2"] = uid
-        g["names"][uid] = name
-        import random
-        b = [[0]*4 for _ in range(4)]
-        for _ in range(2):
-            r, c = random.choice([(r,c) for r in range(4) for c in range(4) if b[r][c] == 0])
-            b[r][c] = 2
-        g.update({"type": "2048", "board": b, "scores": {g["p1"]: 0, g["p2"]: 0}, "turn": g["p1"]})
-        await q.edit_message_text(
-            f"🔢 2048 DUEL STARTED!\n\n{g['names'][g['turn']]}'s turn.\n\n" +
-            "\n".join(" ".join(str(x or "·") for x in row) for row in b),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬆️", callback_data="2048:up")],
-                [InlineKeyboardButton("⬅️", callback_data="2048:left"),
-                 InlineKeyboardButton("⬇️", callback_data="2048:down"),
-                 InlineKeyboardButton("➡️", callback_data="2048:right")]
             ])
         )
         return
