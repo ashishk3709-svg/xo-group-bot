@@ -197,8 +197,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             g.update({"type": "ludo", "players": [], "positions": {}, "names": {}, "turn": 0, "roll": None})
             text = "🎲 LUDO MINI\n\n2–4 players can join. Four tokens each. Join and wait for the creator to start!"
         elif q.data == "select:2048":
-            g.update({"type": "2048_setup", "p1": None, "p2": None, "names": {}})
-            text = "🔢 2048 DUEL\n\nTwo players compete on one shared board. Take turns sliding tiles!"
+            b = [[0]*4 for _ in range(4)]
+            for _ in range(2):
+                r,c = random.choice([(r,c) for r in range(4) for c in range(4) if not b[r][c]])
+                b[r][c] = 2
+            g.update({"type":"2048","owner":uid,"board":b,"score":0})
+            text = "🔢 2048 SINGLE PLAYER\n\n" + "\\n".join(" ".join(str(x or '⬜') for x in row) for row in b) + "\\n\\nScore: 0"
         else:
             g.update({
                 "type": "number", "p1": None, "p2": None,
@@ -221,9 +225,13 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🎮 JOIN LUDO", callback_data="ludojoin")],
                 [InlineKeyboardButton("▶️ START MATCH", callback_data="ludostart")]
             ])
-        elif g["type"] == "2048_setup":
+        elif g["type"] == "2048":
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎮 JOIN 2048", callback_data="2048join")]
+                [InlineKeyboardButton("⬆️", callback_data="2048:up")],
+                [InlineKeyboardButton("⬅️", callback_data="2048:left"),
+                 InlineKeyboardButton("⬇️", callback_data="2048:down"),
+                 InlineKeyboardButton("➡️", callback_data="2048:right")],
+                [InlineKeyboardButton("🔄 RESTART", callback_data="2048:restart")]
             ])
         else:
             keyboard = join_menu()
@@ -516,78 +524,72 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q.data.startswith("2048:"):
         if not g or g.get("type") != "2048":
             return
-        if uid != g["turn"]:
-            await q.answer("Wait for your turn!", show_alert=True)
+        if uid != g["owner"]:
             return
         direction = q.data.split(":")[1]
-        b = g["board"]
-        old = [row[:] for row in b]
-
-        def compress(line):
-            vals = [x for x in line if x]
-            out, gained, i = [], 0, 0
-            while i < len(vals):
-                if i+1 < len(vals) and vals[i] == vals[i+1]:
-                    v = vals[i]*2
-                    out.append(v)
-                    gained += v
-                    i += 2
-                else:
-                    out.append(vals[i])
-                    i += 1
-            return out + [0]*(4-len(out)), gained
-
-        gain_total = 0
-        if direction in ("left", "right"):
-            for r in range(4):
-                line = b[r][:] if direction == "left" else b[r][::-1]
-                new, gain = compress(line)
-                b[r] = new if direction == "left" else new[::-1]
-                gain_total += gain
+        if direction == "restart":
+            b = [[0]*4 for _ in range(4)]
+            for _ in range(2):
+                r,c = random.choice([(r,c) for r in range(4) for c in range(4) if not b[r][c]])
+                b[r][c] = 2
+            g.update({"board":b,"score":0})
         else:
-            for c in range(4):
-                line = [b[r][c] for r in range(4)]
-                if direction == "down":
-                    line.reverse()
-                new, gain = compress(line)
-                if direction == "down":
-                    new.reverse()
+            b = g["board"]
+            old = [row[:] for row in b]
+            def compress(line):
+                vals = [x for x in line if x]
+                out, gained, i = [], 0, 0
+                while i < len(vals):
+                    if i+1 < len(vals) and vals[i] == vals[i+1]:
+                        v = vals[i]*2
+                        out.append(v)
+                        gained += v
+                        i += 2
+                    else:
+                        out.append(vals[i])
+                        i += 1
+                return out + [0]*(4-len(out)), gained
+            if direction in ("left","right"):
                 for r in range(4):
-                    b[r][c] = new[r]
-                gain_total += gain
-
-        if b == old:
-            await q.answer("No tiles moved that way!", show_alert=True)
-            return
-        g["scores"][uid] += gain_total
-        import random
-        empty = [(r,c) for r in range(4) for c in range(4) if b[r][c] == 0]
-        if empty:
-            r,c = random.choice(empty)
-            b[r][c] = 4 if random.random() < .1 else 2
-        if any(2048 in row for row in b):
-            winner = uid
-            loser = g["p2"] if uid == g["p1"] else g["p1"]
-            streaks[winner] = streaks.get(winner, 0) + 1
-            streaks[loser] = 0
-            games.pop(chat, None)
-            await q.edit_message_text(
-                f"🔢 2048 DUEL FINISHED!\n\n🏆 {g['names'][winner]} reached 2048!\n"
-                f"🔥 Winning streak: {streaks[winner]}\n\nPlay again with /play"
-            )
-            return
-        g["turn"] = g["p2"] if uid == g["p1"] else g["p1"]
+                    line = b[r][:] if direction == "left" else b[r][::-1]
+                    new,gain = compress(line)
+                    b[r] = new if direction == "left" else new[::-1]
+                    g["score"] += gain
+            else:
+                for c in range(4):
+                    line = [b[r][c] for r in range(4)]
+                    if direction == "down":
+                        line.reverse()
+                    new,gain = compress(line)
+                    if direction == "down":
+                        new.reverse()
+                    for r in range(4):
+                        b[r][c] = new[r]
+                    g["score"] += gain
+            if b != old:
+                empty = [(r,c) for r in range(4) for c in range(4) if not b[r][c]]
+                if empty:
+                    r,c = random.choice(empty)
+                    b[r][c] = 4 if random.random() < .1 else 2
+        won = any(2048 in row for row in g["board"])
+        full = all(all(row) for row in g["board"])
+        stuck = full and all(
+            g["board"][r][c] != g["board"][r+1][c] and
+            g["board"][r][c] != g["board"][r][c+1]
+            for r in range(4) for c in range(4)
+            if r < 3 and c < 3
+        )
+        status = "\\n🏆 YOU REACHED 2048!" if won else "\\n🏁 GAME OVER!" if stuck else ""
         await q.edit_message_text(
-            "🔢 2048 DUEL\n\n" +
-            "\n".join(" ".join(str(x or "·") for x in row) for row in b) +
-            f"\n\n📊 {g['names'][g['p1']]}: {g['scores'][g['p1']]}"
-            f"\n📊 {g['names'][g['p2']]}: {g['scores'][g['p2']]}"
-            f"\n\n➡️ {g['names'][g['turn']]}'s turn!",
+            "🔢 2048 SINGLE PLAYER\\n\\n" +
+            "\\n".join(" ".join(str(x or '⬜') for x in row) for row in g["board"]) +
+            f"\\n\\n⭐ Score: {g['score']}" + status,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬆️", callback_data="2048:up")],
                 [InlineKeyboardButton("⬅️", callback_data="2048:left"),
                  InlineKeyboardButton("⬇️", callback_data="2048:down"),
-                 InlineKeyboardButton("➡️", callback_data="2048:right")]
+                 InlineKeyboardButton("➡️", callback_data="2048:right")],
+                [InlineKeyboardButton("🔄 RESTART", callback_data="2048:restart")]
             ])
         )
         return
