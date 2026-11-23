@@ -14,6 +14,7 @@ def menu():
         [InlineKeyboardButton("✊ Rock Paper Scissors", callback_data="select:rps")],
         [InlineKeyboardButton("🔢 Number Guessing Battle", callback_data="select:num")],
         [InlineKeyboardButton("🔢 2048 Duel", callback_data="select:2048")],
+        [InlineKeyboardButton("🔥 Truth or Dare", callback_data="select:td")],
     ])
 
 def join_menu():
@@ -176,6 +177,31 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = q.from_user.id
     name = q.from_user.first_name
 
+
+    if q.data.startswith("td:"):
+        if not g or g.get("type") != "td":
+            await q.answer("Start a new game with /play.", show_alert=True)
+            return
+        kind=q.data.split(":")[1]
+        if kind == "skip":
+            kind=g.get("td_current","truth")
+        pool=g["td_"+kind]
+        if not pool:
+            await q.edit_message_text("🎉 All 500 prompts in this category are used! Start /play for a new game.")
+            return
+        prompt=pool.pop(random.randrange(len(pool)))
+        g["td_current"]=kind
+        await q.edit_message_text(
+            f"🔥 TRUTH OR DARE 🔥\\n\\n👤 {name} chose {kind.upper()}!\\n\\n{prompt}\\n\\n"
+            f"📦 {len(pool)} prompts remaining",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
+                 InlineKeyboardButton("❤️ DARE",callback_data="td:dare")],
+                [InlineKeyboardButton("⏭️ SKIP",callback_data="td:skip")]
+            ])
+        )
+        return
+
     if q.data.startswith("select:"):
         if not g or uid != g["creator"] or g.get("type"):
             await q.answer("This game selection is unavailable.", show_alert=True)
@@ -196,6 +222,13 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif q.data == "select:ludo":
             g.update({"type": "ludo", "players": [], "positions": {}, "names": {}, "turn": 0, "roll": None})
             text = "🎲 LUDO MINI\n\n2–4 players can join. Four tokens each. Join and wait for the creator to start!"
+
+        elif q.data == "select:td":
+            truths,dares=td_pools()
+            random.shuffle(truths)
+            random.shuffle(dares)
+            g.update({"type":"td","td_truth":truths,"td_dare":dares})
+            text="🔥 TRUTH OR DARE 🔥\\n\\n500 Truths + 500 Dares!\\nCrush, BF/GF, friendship and funny questions. Dares stay inside this Telegram group. You can skip any prompt."
         elif q.data == "select:2048":
             b = [[0]*4 for _ in range(4)]
             for _ in range(2):
@@ -224,6 +257,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎮 JOIN LUDO", callback_data="ludojoin")],
                 [InlineKeyboardButton("▶️ START MATCH", callback_data="ludostart")]
+            ])
+
+        elif g["type"] == "td":
+            keyboard=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
+                 InlineKeyboardButton("❤️ DARE",callback_data="td:dare")]
             ])
         elif g["type"] == "2048":
             keyboard = InlineKeyboardMarkup([
