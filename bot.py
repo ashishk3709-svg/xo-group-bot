@@ -708,9 +708,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         status = "\n🏆 YOU REACHED 2048!" if won else "\n🏁 GAME OVER!" if stuck else ""
         await q.edit_message_text(
-            "🔢 2048 SINGLE PLAYER\n\n" +
-            "\n".join(" ".join(str(x or '⬜') for x in row) for row in g["board"]) +
-            f"\n\n⭐ Score: {g['score']}" + status,
+            "🎮 2048 — NUMBER PUZZLE\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "⬅️ ➡️ ⬆️ ⬇️  Move the tiles\n\n" +
+            "\n".join("  ".join(f"{x or '·':^5}" for x in row) for row in g["board"]) +
+            f"\n\n⭐ SCORE: {g['score']}\n"
+            "🎯 Combine matching numbers to reach 2048!" + status,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬆️", callback_data="2048:up")],
                 [InlineKeyboardButton("⬅️", callback_data="2048:left"),
