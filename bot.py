@@ -145,6 +145,7 @@ def menu():
         [InlineKeyboardButton("🔢 Number Guessing Battle", callback_data="select:num")],
         [InlineKeyboardButton("🔢 2048 Duel", callback_data="select:2048")],
         [InlineKeyboardButton("🔥 Truth or Dare", callback_data="select:td")],
+        [InlineKeyboardButton("🕵️ Impostor", callback_data="select:impostor")],
     ])
 
 def join_menu():
@@ -300,13 +301,158 @@ async def show_ludo(q, g, caption, keyboard=None):
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if not (q.data in ("ludojoin", "ludostart", "ludoroll") or q.data.startswith("ludomove:")):
+    if not (q.data in ("ludojoin", "ludostart", "ludoroll") or q.data.startswith("ludomove:") or q.data.startswith("imp:")):
         await q.answer()
     chat = q.message.chat_id
     g = games.get(chat)
     uid = q.from_user.id
     name = q.from_user.first_name
 
+
+    if q.data.startswith("imp:"):
+        parts = q.data.split(":")
+        action = parts[1]
+
+        if action in ("join", "start"):
+            chat = q.message.chat_id
+        else:
+            chat = int(parts[2])
+
+        g = games.get(chat)
+        if not g or g.get("type") != "impostor":
+            await q.answer("This Impostor game has ended.", show_alert=True)
+            return
+
+        players = g["imp_players"]
+
+        if action == "join":
+            if g["imp_started"]:
+                await q.answer("Game already started!", show_alert=True)
+                return
+            if uid in players:
+                await q.answer("You already joined!")
+                return
+            try:
+                await context.bot.send_message(
+                    uid, "✅ You're ready for Impostor! Your secret role will arrive when the creator starts."
+                )
+            except Exception:
+                await q.answer("Open the bot privately and press START first.", show_alert=True)
+                return
+            players.append(uid)
+            g["imp_names"][uid] = name
+            roster = "\n".join(
+                f"{i+1}. {g['imp_names'][x]}" for i, x in enumerate(players)
+            )
+            await q.edit_message_text(
+                f"🕵️ IMPOSTOR LOBBY\n\n{roster}\n\n"
+                f"Players: {len(players)}\nAt least 3 players needed.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🙋 JOIN IMPOSTOR", callback_data="imp:join")],
+                    [InlineKeyboardButton("▶️ START GAME", callback_data="imp:start")]
+                ])
+            )
+            return
+
+        if action == "start":
+            if uid != g["creator"] or g["imp_started"]:
+                await q.answer("Only the creator can start this game.", show_alert=True)
+                return
+            if len(players) < 3:
+                await q.answer("At least 3 players must join.", show_alert=True)
+                return
+
+            g["imp_started"] = True
+            g["imp_word"] = random.choice(IMPOSTOR_WORDS)
+            g["imp_impostor"] = random.choice(players)
+
+            for player in players:
+                if player == g["imp_impostor"]:
+                    card = "🕵️ YOU ARE THE IMPOSTOR!\n\nYou have no secret word. Blend in using the hints!"
+                else:
+                    card = f"🤫 YOUR SECRET WORD\n\n{g['imp_word']}\n\nDo not reveal it!"
+                await context.bot.send_message(player, card)
+
+            await q.edit_message_text(
+                f"🕵️ IMPOSTOR GAME STARTED!\n\n"
+                f"👥 Players: {len(players)}\n"
+                "Secret cards have been sent privately.\n"
+                "Give one hint each in the group. Never say the exact word!"
+            )
+            await imp_hint_round(context, chat, g)
+            return
+
+        if action == "skip":
+            if g.get("imp_phase") != "skip" or uid not in players:
+                await q.answer("This vote is not active.", show_alert=True)
+                return
+            if uid in g["imp_skip_votes"]:
+                await q.answer("Your vote is already recorded.", show_alert=True)
+                return
+            choice = parts[3]
+            g["imp_skip_votes"][uid] = choice
+            await q.answer("Private vote recorded!")
+            if len(g["imp_skip_votes"]) == len(players):
+                yes = sum(v == "yes" for v in g["imp_skip_votes"].values())
+                if yes > len(players) / 2:
+                    await context.bot.send_message(
+                        chat, f"⏭️ SKIP PASSED! ({yes}/{len(players)}). Another hint round!"
+                    )
+                    await imp_hint_round(context, chat, g)
+                else:
+                    await context.bot.send_message(
+                        chat, f"➡️ SKIP FAILED ({yes}/{len(players)}). Proceeding to final vote!"
+                    )
+                    await imp_final_vote(context, chat, g)
+            return
+
+        if action == "vote":
+            if g.get("imp_phase") != "vote" or uid not in players:
+                await q.answer("Final voting is not active.", show_alert=True)
+                return
+            if uid in g["imp_votes"]:
+                await q.answer("Your vote is already locked.", show_alert=True)
+                return
+            target = int(parts[3])
+            if target not in players or target == uid:
+                await q.answer("Invalid vote.", show_alert=True)
+                return
+            g["imp_votes"][uid] = target
+            await q.answer("Vote locked privately!")
+            if len(g["imp_votes"]) == len(players):
+                counts = {}
+                for chosen in g["imp_votes"].values():
+                    counts[chosen] = counts.get(chosen, 0) + 1
+                high = max(counts.values())
+                leaders = [p for p, count in counts.items() if count == high]
+                if len(leaders) != 1:
+                    result = (
+                        "🤝 VOTE TIED!\n"
+                        f"The impostor was {g['imp_names'][g['imp_impostor']]}."
+                        "\n🕵️ The impostor escapes!"
+                    )
+                elif leaders[0] == g["imp_impostor"]:
+                    result = (
+                        f"🎯 IMPOSTOR CAUGHT!\n"
+                        f"{g['imp_names'][leaders[0]]} was the impostor!\n"
+                        "🏆 The other players win!"
+                    )
+                else:
+                    result = (
+                        f"❌ WRONG PERSON!\n"
+                        f"{g['imp_names'][leaders[0]]} was innocent.\n"
+                        f"🕵️ The impostor was {g['imp_names'][g['imp_impostor']]}!\n"
+                        "🏆 The impostor wins!"
+                    )
+                games.pop(chat, None)
+                await context.bot.send_message(
+                    chat,
+                    "🕵️ IMPOSTOR — FINAL RESULT\n\n"
+                    f"Secret word: {g['imp_word']}\n\n{result}\n\n"
+                    "Start another game with /play."
+                )
+            return
+        return
 
     if q.data.startswith("td:"):
         if not g or g.get("type") != "td":
@@ -428,6 +574,13 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                       "td_players":[],"td_names":{},"td_skips":{},
                       "td_started":False,"td_panel_id":q.message.message_id})
             text="🔥 TRUTH OR DARE 🔥\n\nJoin the competition!\nEach player gets 3 skips. Reply to your exact question when it's your turn."
+        elif q.data == "select:impostor":
+            g.update({
+                "type": "impostor", "imp_players": [],
+                "imp_names": {}, "imp_started": False,
+                "imp_phase": "lobby"
+            })
+            text = "🕵️ IMPOSTOR\n\nJoin the game! At least 3 players are needed.\nEveryone must open the bot privately and press START before joining."
         elif q.data == "select:2048":
             b = [[0]*4 for _ in range(4)]
             for _ in range(2):
@@ -462,6 +615,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🙋 JOIN",callback_data="td:join")],
                 [InlineKeyboardButton("▶️ START",callback_data="td:start")]
+            ])
+        elif g["type"] == "impostor":
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🙋 JOIN IMPOSTOR", callback_data="imp:join")],
+                [InlineKeyboardButton("▶️ START GAME", callback_data="imp:start")]
             ])
         elif g["type"] == "2048":
             keyboard = InlineKeyboardMarkup([
@@ -943,13 +1101,85 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+
+
+IMPOSTOR_WORDS = [
+    "PIZZA", "AIRPORT", "ELEPHANT", "GUITAR", "RAINBOW",
+    "HOSPITAL", "CHOCOLATE", "BASKETBALL", "WATERFALL",
+    "LIBRARY", "TELEPHONE", "BUTTERFLY", "MOUNTAIN",
+    "SANDWICH", "UMBRELLA", "DOLPHIN", "CINEMA",
+    "BACKPACK", "VOLCANO", "KEYBOARD", "ICE CREAM",
+    "FOOTBALL", "SUNFLOWER", "HELICOPTER", "MUSEUM"
+]
+
+async def imp_hint_round(context, chat, g):
+    g["imp_round"] = g.get("imp_round", 0) + 1
+    g["imp_phase"] = "hints"
+    g["imp_hints"] = {}
+    await context.bot.send_message(
+        chat,
+        f"🕵️ IMPOSTOR — HINT ROUND {g['imp_round']}\n\n"
+        "Everyone must send one hint in this group. "
+        "Do NOT reveal the secret word!"
+    )
+
+async def imp_skip_vote(context, chat, g):
+    g["imp_phase"] = "skip"
+    g["imp_skip_votes"] = {}
+    await context.bot.send_message(
+        chat, "🗳️ Everyone has given a hint. Private SKIP voting has started!"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏭️ SKIP — another hint", callback_data=f"imp:skip:{chat}:yes")],
+        [InlineKeyboardButton("➡️ CONTINUE — final vote", callback_data=f"imp:skip:{chat}:no")]
+    ])
+    for uid in g["imp_players"]:
+        await context.bot.send_message(
+            uid, "🗳️ SKIP VOTE\nShould everyone give another hint?", reply_markup=kb
+        )
+
+async def imp_final_vote(context, chat, g):
+    g["imp_phase"] = "vote"
+    g["imp_votes"] = {}
+    await context.bot.send_message(
+        chat, "🔍 FINAL VOTING! Check your private bot messages and vote for the suspected impostor."
+    )
+    for uid in g["imp_players"]:
+        rows = [
+            [InlineKeyboardButton(
+                g["imp_names"][other],
+                callback_data=f"imp:vote:{chat}:{other}"
+            )]
+            for other in g["imp_players"] if other != uid
+        ]
+        await context.bot.send_message(
+            uid, "🗳️ FINAL VOTE\nWho is the impostor?",
+            reply_markup=InlineKeyboardMarkup(rows)
+        )
+
 async def td_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg or not msg.text or not msg.from_user:
         return
 
     chat = update.effective_chat.id
+    uid = msg.from_user.id
     g = games.get(chat)
+    if g and g.get("type") == "impostor":
+        if g.get("imp_phase") != "hints" or uid not in g["imp_players"]:
+            return
+        if uid in g["imp_hints"]:
+            await msg.reply_text("✅ Your hint is already submitted. Wait for everyone!")
+            return
+        g["imp_hints"][uid] = msg.text.strip()
+        await msg.reply_text(
+            f"💬 Hint received from {g['imp_names'][uid]} "
+            f"({len(g['imp_hints'])}/{len(g['imp_players'])})."
+        )
+        if len(g["imp_hints"]) == len(g["imp_players"]):
+            await imp_skip_vote(context, chat, g)
+        return
+
     if not g or g.get("type") != "td" or not g.get("td_started"):
         return
 
