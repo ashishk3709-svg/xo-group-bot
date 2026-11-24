@@ -307,13 +307,13 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             kb=InlineKeyboardMarkup([[InlineKeyboardButton(
                 f"⏭️ SKIP ({remaining} left)",callback_data="td:skip"
             )]]) if remaining else None
-            msg=await context.bot.send_message(
-                chat_id=chat,
-                text=f"🔥 {action.upper()} — {g['td_names'][uid]}'s turn\\n\\n{prompt}\\n\\nReply directly to THIS message with your answer."+
-                     ("\\n⏭️ You may skip this question." if remaining else "\\n🔒 No skips left. Answer is compulsory."),
+            await context.bot.edit_message_text(
+                chat_id=chat, message_id=g["td_panel_id"],
+                text=f"🔥 {action.upper()} — {g['td_names'][uid]}'s turn\n\n{prompt}\n\nReply directly to THIS message with your answer."+
+                     ("\n⏭️ You may skip this question." if remaining else "\n🔒 No skips left. Answer is compulsory."),
                 reply_markup=kb
             )
-            g["td_prompt_id"]=msg.message_id
+            g["td_prompt_id"]=g["td_panel_id"]
             return
         return
 
