@@ -865,32 +865,46 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def td_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg=update.effective_message
+    msg = update.effective_message
     if not msg or not msg.reply_to_message or not msg.from_user:
         return
-    g=games.get(update.effective_chat.id)
-    if not g or g.get("type")!="td" or not g.get("td_started"):
+
+    chat = update.effective_chat.id
+    g = games.get(chat)
+    if not g or g.get("type") != "td" or not g.get("td_started"):
         return
-    uid=msg.from_user.id
-    players=g["td_players"]
-    if uid != players[g["td_turn"]] or msg.reply_to_message.message_id != g.get("td_prompt_id"):
+
+    players = g["td_players"]
+    if not players:
+        return
+
+    uid = msg.from_user.id
+    prompt_id = g.get("td_prompt_id")
+
+    if prompt_id is None or msg.reply_to_message.message_id != prompt_id:
+        return
+    if uid != players[g["td_turn"]]:
         return
 
     await context.bot.edit_message_reply_markup(
-        chat_id=update.effective_chat.id,
-        message_id=g["td_prompt_id"], reply_markup=None
+        chat_id=chat, message_id=prompt_id, reply_markup=None
     )
-    g["td_turn"]=(g["td_turn"]+1)%len(players)
-    nxt=players[g["td_turn"]]
-    await context.bot.edit_message_text(
-        chat_id=update.effective_chat.id,
-        message_id=g["td_panel_id"],
-        text=f"✅ {g['td_names'][uid]} answered!\\n\\n🔥 {g['td_names'][nxt]}'s turn.\\nSkips left: {3-g['td_skips'][nxt]}",
+
+    g["td_prompt_id"] = None
+    g["td_turn"] = (g["td_turn"] + 1) % len(players)
+    nxt = players[g["td_turn"]]
+
+    panel = await context.bot.send_message(
+        chat_id=chat,
+        text=f"✅ {g['td_names'][uid]} answered!\n\n"
+             f"🔥 {g['td_names'][nxt]}'s turn. Choose Truth or Dare.\n"
+             f"Skips left: {3-g['td_skips'][nxt]}",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
-             InlineKeyboardButton("❤️ DARE",callback_data="td:dare")]
+            [InlineKeyboardButton("💚 TRUTH", callback_data="td:truth"),
+             InlineKeyboardButton("❤️ DARE", callback_data="td:dare")]
         ])
     )
+    g["td_panel_id"] = panel.message_id
 
 
 async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
