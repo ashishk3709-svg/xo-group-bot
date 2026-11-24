@@ -869,7 +869,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def td_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
-    if not msg or not msg.reply_to_message or not msg.from_user:
+    if not msg or not msg.text or not msg.from_user:
         return
 
     chat = update.effective_chat.id
@@ -878,20 +878,21 @@ async def td_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     players = g["td_players"]
-    if not players:
+    if not players or g.get("td_prompt_id") is None:
         return
 
     uid = msg.from_user.id
-    prompt_id = g.get("td_prompt_id")
-
-    if prompt_id is None or msg.reply_to_message.message_id != prompt_id:
-        return
     if uid != players[g["td_turn"]]:
         return
 
-    await context.bot.edit_message_reply_markup(
-        chat_id=chat, message_id=prompt_id, reply_markup=None
-    )
+    prompt_id = g["td_prompt_id"]
+
+    try:
+        await context.bot.edit_message_reply_markup(
+            chat_id=chat, message_id=prompt_id, reply_markup=None
+        )
+    except Exception as e:
+        print(f"TD markup update: {e}")
 
     g["td_prompt_id"] = None
     g["td_turn"] = (g["td_turn"] + 1) % len(players)
