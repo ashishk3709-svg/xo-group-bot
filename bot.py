@@ -8,49 +8,55 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 def td_pools():
     topics = [
-        "school life","friendship","your childhood","your hobbies","your dreams",
-        "your funniest memory","your favourite person","your personality",
-        "your favourite game","your favourite movie","your favourite song",
-        "your biggest achievement","your most awkward moment","your future",
-        "your ideal friendship","your favourite food","your daily routine",
-        "your secret talent","your favourite teacher","your best quality",
-        "your worst habit","your dream holiday","your happiest day",
-        "your biggest inspiration","your online life","your gaming life",
-        "your school memories","your confidence","your biggest motivation",
-        "your favourite sport","your favourite app","your perfect weekend",
-        "your funniest nickname","your favourite season","your dream house",
-        "your favourite celebration","your biggest lesson","your first impression",
-        "your ideal relationship","your crush preferences","your definition of love",
-        "your favourite cartoon","your favourite book","your dream adventure",
-        "your best decision","your funniest chat","your childhood memories",
-        "your favourite subject","your personal goals","your friendship secrets"
+        "your biggest secret", "your crush", "your last awkward moment",
+        "your biggest fear", "your friendship circle", "your first impression",
+        "your most embarrassing moment", "your biggest regret", "your jealousy",
+        "your dream partner", "your trust issues", "your funniest lie",
+        "your hidden talent", "your biggest insecurity", "your social life",
+        "your online personality", "your worst habit", "your best quality",
+        "your most awkward conversation", "your dream date", "your loyalty",
+        "your biggest misunderstanding", "your secret ambition", "your confidence",
+        "your biggest disappointment", "your favourite person", "your school drama",
+        "your funniest memory", "your friendship standards", "your ideal weekend",
+        "your biggest motivation", "your personal boundaries", "your first impression of this group",
+        "your most unexpected compliment", "your biggest achievement", "your dream lifestyle",
+        "your biggest temptation", "your funniest excuse", "your communication style",
+        "your most controversial opinion", "your dream vacation", "your biggest challenge",
+        "your definition of love", "your biggest lesson", "your future goals",
+        "your favourite memory", "your competitive side", "your sense of humour",
+        "your secret ambition", "your perfect day"
     ]
+
     tf = [
-        "What is your funniest story about {}?",
-        "What is one thing you would change about {}?",
-        "What makes you happiest about {}?",
-        "What is something people misunderstand about {}?",
-        "What is your honest opinion about {}?",
-        "What is your favourite memory of {}?",
-        "What is one lesson you learned from {}?",
-        "What would you improve about {}?",
-        "What is the most surprising thing about {}?",
-        "What is one thing you appreciate about {}?"
+        "What's the most unexpected thing about {}?",
+        "What's one thing you'd never admit about {}?",
+        "Have you ever lied about {}?",
+        "What's your most honest opinion about {}?",
+        "What's the biggest lesson you've learned about {}?",
+        "What's the funniest incident involving {}?",
+        "What's one thing you'd change about {}?",
+        "What's your biggest red flag related to {}?",
+        "What's something people don't know about {}?",
+        "What's the boldest decision you've made about {}?"
     ]
+
     df = [
-        "Describe {} using exactly five words in this group.",
-        "Make a two-line poem about {} and post it here.",
-        "Explain {} using only emojis in this group.",
-        "Write a funny headline about {} and share it here.",
-        "Give {} a hilarious nickname and post it here.",
-        "Make a mini-riddle about {} for the group.",
-        "Write a dramatic one-line speech about {} here.",
-        "Describe {} like a movie trailer in this group.",
-        "Create a funny slogan about {} and post it here.",
-        "Send a three-emoji story about {} in this group."
+        "Describe {} in three brutally honest words.",
+        "Make a dramatic announcement about {} in the group.",
+        "Give {} a hilarious new nickname.",
+        "Write a one-line confession about {}.",
+        "Explain {} like you're in a movie trailer.",
+        "Create a funny headline about {}.",
+        "Describe {} using only three emojis.",
+        "Give a 10-second speech about {}.",
+        "Make a funny fake award for {}.",
+        "Turn {} into a dramatic movie title."
     ]
-    return ([f.format(t) for f in tf for t in topics],
-            [f.format(t) for f in df for t in topics])
+
+    return (
+        [f.format(t) for f in tf for t in topics],
+        [f.format(t) for f in df for t in topics]
+    )
 
 
 games = {}
