@@ -3,7 +3,7 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from telegram import InputMediaPhoto
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 
 def td_pools():
@@ -228,26 +228,93 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if q.data.startswith("td:"):
         if not g or g.get("type") != "td":
-            await q.answer("Start a new game with /play.", show_alert=True)
+            await q.answer("No active Truth or Dare game.", show_alert=True)
             return
-        kind=q.data.split(":")[1]
-        if kind == "skip":
-            kind=g.get("td_current","truth")
-        pool=g["td_"+kind]
-        if not pool:
-            await q.edit_message_text("🎉 All 500 prompts in this category are used! Start /play for a new game.")
+        action=q.data.split(":")[1]
+        players=g["td_players"]
+
+        if action == "join":
+            if g["td_started"]:
+                await q.answer("Game already started!", show_alert=True)
+                return
+            if uid in players:
+                await q.answer("You already joined!")
+                return
+            players.append(uid)
+            g["td_names"][uid]=name
+            g["td_skips"][uid]=0
+            await q.edit_message_text(
+                "🔥 TRUTH OR DARE LOBBY 🔥\\n\\n"+
+                "\\n".join(f"{i+1}. {g['td_names'][x]}" for i,x in enumerate(players))+
+                "\\n\\nJoin before the creator starts!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🙋 JOIN",callback_data="td:join")],
+                    [InlineKeyboardButton("▶️ START",callback_data="td:start")]
+                ])
+            )
             return
-        prompt=pool.pop(random.randrange(len(pool)))
-        g["td_current"]=kind
-        await q.edit_message_text(
-            f"🔥 TRUTH OR DARE 🔥\\n\\n👤 {name} chose {kind.upper()}!\\n\\n{prompt}\\n\\n"
-            f"📦 {len(pool)} prompts remaining",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
-                 InlineKeyboardButton("❤️ DARE",callback_data="td:dare")],
-                [InlineKeyboardButton("⏭️ SKIP",callback_data="td:skip")]
-            ])
-        )
+
+        if action == "start":
+            if uid != g["creator"] or g["td_started"] or len(players)<2:
+                await q.answer("Creator only. At least 2 players must join.",show_alert=True)
+                return
+            g["td_started"]=True
+            g["td_turn"]=0
+            await q.edit_message_text(
+                f"🔥 TRUTH OR DARE STARTED!\\n\\n{g['td_names'][players[0]]}'s turn. Choose Truth or Dare.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
+                     InlineKeyboardButton("❤️ DARE",callback_data="td:dare")]
+                ])
+            )
+            return
+
+        if not g["td_started"]:
+            await q.answer("The creator must start the game first.",show_alert=True)
+            return
+        current=players[g["td_turn"]]
+        if uid != current:
+            await q.answer("Wait for your turn!",show_alert=True)
+            return
+
+        if action == "skip":
+            if q.message.message_id != g.get("td_prompt_id"):
+                await q.answer("This is not the current question.",show_alert=True)
+                return
+            if g["td_skips"][uid] >= 3:
+                await q.answer("No skips left! This question is compulsory.",show_alert=True)
+                return
+            g["td_skips"][uid] += 1
+            await q.edit_message_text("⏭️ Question skipped.")
+            await context.bot.edit_message_text(
+                chat_id=chat, message_id=g["td_panel_id"],
+                text=f"🔥 {g['td_names'][uid]}'s turn\\nSkips left: {3-g['td_skips'][uid]}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
+                     InlineKeyboardButton("❤️ DARE",callback_data="td:dare")]
+                ])
+            )
+            return
+
+        if action in ("truth","dare"):
+            pool=g["td_"+action]
+            if not pool:
+                await q.answer("No prompts left in this category!",show_alert=True)
+                return
+            prompt=pool.pop(random.randrange(len(pool)))
+            g["td_current_kind"]=action
+            remaining=3-g["td_skips"][uid]
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton(
+                f"⏭️ SKIP ({remaining} left)",callback_data="td:skip"
+            )]]) if remaining else None
+            msg=await context.bot.send_message(
+                chat_id=chat,
+                text=f"🔥 {action.upper()} — {g['td_names'][uid]}'s turn\\n\\n{prompt}\\n\\nReply directly to THIS message with your answer."+
+                     ("\\n⏭️ You may skip this question." if remaining else "\\n🔒 No skips left. Answer is compulsory."),
+                reply_markup=kb
+            )
+            g["td_prompt_id"]=msg.message_id
+            return
         return
 
     if q.data.startswith("select:"):
@@ -275,8 +342,10 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             truths,dares=td_pools()
             random.shuffle(truths)
             random.shuffle(dares)
-            g.update({"type":"td","td_truth":truths,"td_dare":dares})
-            text="🔥 TRUTH OR DARE 🔥\\n\\n500 Truths + 500 Dares!\\nCrush, BF/GF, friendship and funny questions. Dares stay inside this Telegram group. You can skip any prompt."
+            g.update({"type":"td","td_truth":truths,"td_dare":dares,
+                      "td_players":[],"td_names":{},"td_skips":{},
+                      "td_started":False,"td_panel_id":q.message.message_id})
+            text="🔥 TRUTH OR DARE 🔥\\n\\nJoin the competition!\\nEach player gets 3 skips. Reply to your exact question when it's your turn."
         elif q.data == "select:2048":
             b = [[0]*4 for _ in range(4)]
             for _ in range(2):
@@ -309,8 +378,8 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif g["type"] == "td":
             keyboard=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
-                 InlineKeyboardButton("❤️ DARE",callback_data="td:dare")]
+                [InlineKeyboardButton("🙋 JOIN",callback_data="td:join")],
+                [InlineKeyboardButton("▶️ START",callback_data="td:start")]
             ])
         elif g["type"] == "2048":
             keyboard = InlineKeyboardMarkup([
@@ -789,6 +858,35 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def td_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg=update.effective_message
+    if not msg or not msg.reply_to_message or not msg.from_user:
+        return
+    g=games.get(update.effective_chat.id)
+    if not g or g.get("type")!="td" or not g.get("td_started"):
+        return
+    uid=msg.from_user.id
+    players=g["td_players"]
+    if uid != players[g["td_turn"]] or msg.reply_to_message.message_id != g.get("td_prompt_id"):
+        return
+
+    await context.bot.edit_message_reply_markup(
+        chat_id=update.effective_chat.id,
+        message_id=g["td_prompt_id"], reply_markup=None
+    )
+    g["td_turn"]=(g["td_turn"]+1)%len(players)
+    nxt=players[g["td_turn"]]
+    await context.bot.edit_message_text(
+        chat_id=update.effective_chat.id,
+        message_id=g["td_panel_id"],
+        text=f"✅ {g['td_names'][uid]} answered!\\n\\n🔥 {g['td_names'][nxt]}'s turn.\\nSkips left: {3-g['td_skips'][nxt]}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
+             InlineKeyboardButton("❤️ DARE",callback_data="td:dare")]
+        ])
+    )
+
+
 async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -831,6 +929,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play))
     app.add_handler(CommandHandler("end", end_game))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, td_reply))
     app.add_handler(CallbackQueryHandler(buttons))
     print("XO GROUP BOT IS RUNNING!")
     app.run_polling()
