@@ -250,9 +250,9 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             g["td_names"][uid]=name
             g["td_skips"][uid]=0
             await q.edit_message_text(
-                "🔥 TRUTH OR DARE LOBBY 🔥\\n\\n"+
-                "\\n".join(f"{i+1}. {g['td_names'][x]}" for i,x in enumerate(players))+
-                "\\n\\nJoin before the creator starts!",
+                "🔥 TRUTH OR DARE LOBBY 🔥\n\n"+
+                "\n".join(f"{i+1}. {g['td_names'][x]}" for i,x in enumerate(players))+
+                "\n\nJoin before the creator starts!",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🙋 JOIN",callback_data="td:join")],
                     [InlineKeyboardButton("▶️ START",callback_data="td:start")]
@@ -267,7 +267,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             g["td_started"]=True
             g["td_turn"]=0
             await q.edit_message_text(
-                f"🔥 TRUTH OR DARE STARTED!\\n\\n{g['td_names'][players[0]]}'s turn. Choose Truth or Dare.",
+                f"🔥 TRUTH OR DARE STARTED!\n\n{g['td_names'][players[0]]}'s turn. Choose Truth or Dare.",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
                      InlineKeyboardButton("❤️ DARE",callback_data="td:dare")]
@@ -294,7 +294,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.edit_message_text("⏭️ Question skipped.")
             await context.bot.edit_message_text(
                 chat_id=chat, message_id=g["td_panel_id"],
-                text=f"🔥 {g['td_names'][uid]}'s turn\\nSkips left: {3-g['td_skips'][uid]}",
+                text=f"🔥 {g['td_names'][uid]}'s turn\nSkips left: {3-g['td_skips'][uid]}",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("💚 TRUTH",callback_data="td:truth"),
                      InlineKeyboardButton("❤️ DARE",callback_data="td:dare")]
@@ -351,14 +351,14 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             g.update({"type":"td","td_truth":truths,"td_dare":dares,
                       "td_players":[],"td_names":{},"td_skips":{},
                       "td_started":False,"td_panel_id":q.message.message_id})
-            text="🔥 TRUTH OR DARE 🔥\\n\\nJoin the competition!\\nEach player gets 3 skips. Reply to your exact question when it's your turn."
+            text="🔥 TRUTH OR DARE 🔥\n\nJoin the competition!\nEach player gets 3 skips. Reply to your exact question when it's your turn."
         elif q.data == "select:2048":
             b = [[0]*4 for _ in range(4)]
             for _ in range(2):
                 r,c = random.choice([(r,c) for r in range(4) for c in range(4) if not b[r][c]])
                 b[r][c] = 2
             g.update({"type":"2048","owner":uid,"board":b,"score":0})
-            text = "🔢 2048 SINGLE PLAYER\n\n" + "\\n".join(" ".join(str(x or '⬜') for x in row) for row in b) + "\\n\\nScore: 0"
+            text = "🔢 2048 SINGLE PLAYER\n\n" + "\n".join(" ".join(str(x or '⬜') for x in row) for row in b) + "\n\nScore: 0"
         else:
             g.update({
                 "type": "number", "p1": None, "p2": None,
@@ -706,11 +706,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for r in range(4) for c in range(4)
             if r < 3 and c < 3
         )
-        status = "\\n🏆 YOU REACHED 2048!" if won else "\\n🏁 GAME OVER!" if stuck else ""
+        status = "\n🏆 YOU REACHED 2048!" if won else "\n🏁 GAME OVER!" if stuck else ""
         await q.edit_message_text(
-            "🔢 2048 SINGLE PLAYER\\n\\n" +
-            "\\n".join(" ".join(str(x or '⬜') for x in row) for row in g["board"]) +
-            f"\\n\\n⭐ Score: {g['score']}" + status,
+            "🔢 2048 SINGLE PLAYER\n\n" +
+            "\n".join(" ".join(str(x or '⬜') for x in row) for row in g["board"]) +
+            f"\n\n⭐ Score: {g['score']}" + status,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬆️", callback_data="2048:up")],
                 [InlineKeyboardButton("⬅️", callback_data="2048:left"),
