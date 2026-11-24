@@ -61,6 +61,8 @@ def menu():
         [InlineKeyboardButton("❌⭕ Tic-Tac-Toe", callback_data="select:ttt")],
         [InlineKeyboardButton("✊ Rock Paper Scissors", callback_data="select:rps")],
         [InlineKeyboardButton("🔢 Number Guessing Battle", callback_data="select:num")],
+        [InlineKeyboardButton("🔢 2048 Duel", callback_data="select:2048")],
+        [InlineKeyboardButton("🔥 Truth or Dare", callback_data="select:td")],
     ])
 
 def join_menu():
