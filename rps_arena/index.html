@@ -7,19 +7,18 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:radial-gradient(circle at top,#25345c,#090d19 70%);color:white;font-family:Arial,sans-serif;min-height:100vh;display:grid;place-items:center;padding:20px}
-.card{width:100%;max-width:440px;text-align:center;background:#151d31;border:1px solid #354568;border-radius:25px;padding:25px;box-shadow:0 15px 50px #0008}
-h1{font-size:30px;margin:5px;color:#8eeaff;letter-spacing:2px}
-.sub{color:#aebbd3;font-size:13px}
-.score{display:flex;justify-content:space-around;margin:25px 0;background:#0d1425;padding:17px;border-radius:16px}
+body{margin:0;background:radial-gradient(circle at top,#25345c,#090d19 70%);color:white;font-family:Arial,sans-serif;min-height:100vh;display:grid;place-items:center;padding:18px}
+.card{width:100%;max-width:440px;text-align:center;background:#151d31;border:1px solid #354568;border-radius:25px;padding:23px;box-shadow:0 15px 50px #0008}
+h1{font-size:29px;margin:5px;color:#8eeaff;letter-spacing:2px}
+.sub{color:#aebbd3;font-size:12px}
+.score{display:flex;justify-content:space-around;margin:24px 0;background:#0d1425;padding:16px;border-radius:16px}
 .score strong{display:block;font-size:30px;color:#8eeaff}
-.choices{display:flex;gap:12px;margin:25px 0}
-.choice{flex:1;border:1px solid #455675;background:#202d48;border-radius:18px;padding:16px 5px;color:white;font-size:39px;cursor:pointer}
-.choice:active{transform:scale(.94)}
-.choice span{display:block;font-size:12px;margin-top:8px}
-.choice:disabled{opacity:.4}
-.status{min-height:65px;background:#0d1425;border-radius:15px;padding:18px;color:#c9d7f0;line-height:1.5}
-button#again{margin-top:18px;padding:13px 25px;border:0;border-radius:12px;background:#4dd5ed;color:#071321;font-weight:bold;font-size:15px}
+.choices{display:flex;gap:11px;margin:23px 0}
+.choice{flex:1;border:1px solid #455675;background:#202d48;border-radius:17px;padding:15px 4px;color:white;font-size:37px;cursor:pointer}
+.choice span{display:block;font-size:11px;margin-top:8px}
+.choice:disabled{opacity:.35;cursor:default}
+.status{min-height:65px;background:#0d1425;border-radius:15px;padding:17px;color:#c9d7f0;line-height:1.5}
+.history{margin-top:17px;text-align:left;color:#c9d7f0;font-size:13px;line-height:1.8}
 .hidden{display:none}
 </style>
 </head>
@@ -38,32 +37,95 @@ button#again{margin-top:18px;padding:13px 25px;border:0;border-radius:12px;backg
 <button class="choice" onclick="pick('paper')">✋<span>PAPER</span></button>
 <button class="choice" onclick="pick('scissors')">✌️<span>SCISSORS</span></button>
 </div>
-<div class="status" id="status">Choose your move to begin!</div>
-<button id="again" class="hidden" onclick="reset()">PLAY AGAIN</button>
-<p class="sub">RPS ARENA • TELEGRAM MINI APP</p>
+<div class="status" id="status">Connecting to Arena...</div>
+<div class="history" id="history"></div>
+<p class="sub">FIRST TO 2 WINS • PRIVATE MATCH</p>
 </div>
 <script>
 const tg=window.Telegram?.WebApp;
 tg?.ready();tg?.expand();
-let you=0,opp=0,round=1,locked=false;
-function pick(choice){
- if(locked)return;
- locked=true;
- document.querySelectorAll('.choice').forEach(b=>b.disabled=true);
- document.getElementById('title').textContent='MOVE LOCKED 🔒';
- document.getElementById('status').textContent='Your choice: '+choice.toUpperCase()+'. Waiting for opponent...';
- tg?.sendData(JSON.stringify({type:'rps_choice',choice}));
+
+const API="https://xo-token.fadehost.app";
+const params=new URLSearchParams(location.search);
+const room=params.get("room");
+const key=params.get("key");
+const initData=tg?.initData||"";
+let locked=false,finished=false,busy=false;
+
+const $=id=>document.getElementById(id);
+function buttonsDisabled(value){
+ document.querySelectorAll(".choice").forEach(b=>b.disabled=value);
 }
-function reset(){
- you=0;opp=0;round=1;locked=false;
- document.getElementById('you').textContent=0;
- document.getElementById('opp').textContent=0;
- document.getElementById('round').textContent=1;
- document.getElementById('title').textContent='MAKE YOUR MOVE';
- document.getElementById('status').textContent='Choose your move to begin!';
- document.getElementById('again').classList.add('hidden');
- document.querySelectorAll('.choice').forEach(b=>b.disabled=false);
+function authHeaders(){
+ return {"Authorization":"tma "+initData,"Content-Type":"application/json"};
 }
+async function pick(choice){
+ if(locked||finished||busy)return;
+ busy=true;
+ buttonsDisabled(true);
+ $("status").textContent="🔒 Locking your choice...";
+ try{
+  const res=await fetch(API+"/api/choice?room="+encodeURIComponent(room)+"&key="+encodeURIComponent(key),{
+   method:"POST",headers:authHeaders(),
+   body:JSON.stringify({room,choice})
+  });
+  const data=await res.json();
+  if(!res.ok)throw new Error(data.error||"Could not submit choice");
+  locked=true;
+  $("title").textContent="MOVE LOCKED 🔒";
+  $("status").textContent=data.waiting?"Waiting for your opponent...":"Both moves received!";
+  await refresh();
+ }catch(e){
+  $("status").textContent="⚠️ "+e.message;
+  if(!locked)buttonsDisabled(false);
+ }finally{busy=false;}
+}
+function renderHistory(items){
+ $("history").innerHTML=items.map(x=>{
+  const mine=x.my_choice||"—",theirs=x.opponent_choice||"—";
+  const result=x.winner_name==="Draw"?"DRAW":x.winner_name;
+  return `<div>Round ${x.round}: ${mine.toUpperCase()} vs ${theirs.toUpperCase()} — ${result}</div>`;
+ }).join("");
+}
+async function refresh(){
+ if(!room||!key||!initData){
+  $("status").textContent="⚠️ Open this game using the Telegram bot's private Arena button.";
+  buttonsDisabled(true);return;
+ }
+ try{
+  const res=await fetch(API+"/api/state?room="+encodeURIComponent(room)+"&key="+encodeURIComponent(key),{
+   headers:authHeaders()
+  });
+  const data=await res.json();
+  if(!res.ok)throw new Error(data.error||"Unable to load match");
+  $("you").textContent=data.my_score;
+  $("opp").textContent=data.opponent_score;
+  $("round").textContent=Math.min(data.round,3);
+  renderHistory(data.history||[]);
+  if(data.finished){
+   finished=true;locked=true;buttonsDisabled(true);
+   $("title").textContent="🏆 MATCH FINISHED";
+   $("status").textContent=data.match_winner===null?"Match complete!":data.my_score>data.opponent_score?"🎉 YOU WON!":"🏁 OPPONENT WON!";
+  }else if(data.waiting){
+   locked=true;buttonsDisabled(true);
+   $("title").textContent="MOVE LOCKED 🔒";
+   $("status").textContent="Your choice is locked. Waiting for opponent...";
+  }else if(data.history?.length && data.round>1){
+   locked=false;buttonsDisabled(false);
+   const last=data.history[data.history.length-1];
+   $("title").textContent="ROUND "+data.round;
+   $("status").textContent=last.winner_name==="Draw"?"🤝 Previous round was a draw. Choose again!":last.winner_name+" won the previous round. Choose again!";
+  }else{
+   locked=false;buttonsDisabled(false);
+   $("title").textContent="MAKE YOUR MOVE";
+   $("status").textContent="Choose Rock, Paper or Scissors!";
+  }
+ }catch(e){
+  $("status").textContent="⚠️ "+e.message;
+ }
+}
+refresh();
+setInterval(()=>{if(!finished)refresh()},1200);
 </script>
 </body>
 </html>

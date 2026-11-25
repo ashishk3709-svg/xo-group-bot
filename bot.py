@@ -2,8 +2,8 @@ import os, uuid, random
 from aiohttp import web
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
-from telegram import InputMediaPhoto
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InputMediaPhoto, WebAppInfo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 
@@ -302,13 +302,80 @@ async def show_ludo(q, g, caption, keyboard=None):
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if not (q.data in ("ludojoin", "ludostart", "ludoroll") or q.data.startswith("ludomove:") or q.data.startswith("imp:")):
+    if not (q.data in ("ludojoin", "ludostart", "ludoroll") or q.data.startswith("ludomove:") or q.data.startswith("imp:") or q.data == "arena:join"):
         await q.answer()
     chat = q.message.chat_id
     g = games.get(chat)
     uid = q.from_user.id
     name = q.from_user.first_name
 
+
+    if q.data == "arena:join":
+        if not g or g.get("type") != "rps_arena":
+            await q.answer("This Arena lobby has ended.", show_alert=True)
+            return
+
+        if uid in (g.get("p1"), g.get("p2")):
+            await q.answer("You have already joined!", show_alert=True)
+            return
+
+        if g.get("p2") is not None:
+            await q.answer("Arena is full!", show_alert=True)
+            return
+
+        room_id = g["id"]
+        g.setdefault("arena_tokens", {})
+        player_key = uuid.uuid4().hex
+
+        if g.get("p1") is None:
+            g["p1"] = uid
+        else:
+            g["p2"] = uid
+
+        g["names"][uid] = name
+        g["arena_tokens"][uid] = player_key
+
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text="⚡ RPS ARENA\\n\\nYour private match link is ready. Wait for your opponent to join, then make your move!",
+                reply_markup=ReplyKeyboardMarkup([[
+                    KeyboardButton(
+                        "⚡ OPEN RPS ARENA",
+                        web_app=WebAppInfo(
+                            url=f"https://ashishk3709-svg.github.io/xo-group-bot/?room={room_id}&key={player_key}"
+                        )
+                    )
+                ]], resize_keyboard=True, one_time_keyboard=True)
+            )
+        except Exception:
+            if g.get("p1") == uid:
+                g["p1"] = None
+            if g.get("p2") == uid:
+                g["p2"] = None
+            g["names"].pop(uid, None)
+            g["arena_tokens"].pop(uid, None)
+            await q.answer("Open the bot privately and press START first!", show_alert=True)
+            return
+
+        if g.get("p2") is None:
+            text = f"⚡ RPS ARENA\\n\\n{name} joined!\\nWaiting for Player 2..."
+        else:
+            arena_rooms[room_id] = g
+            text = (
+                "⚡ RPS ARENA — MATCH READY!\\n\\n"
+                f"👤 {g['names'][g['p1']]}\\n"
+                f"👤 {g['names'][g['p2']]}\\n\\n"
+                "Both players: open your private Arena message!"
+            )
+
+        await q.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🎮 JOIN RPS ARENA", callback_data="arena:join")
+            ]]) if g.get("p2") is None else None
+        )
+        return
 
     if q.data.startswith("imp:"):
         parts = q.data.split(":")
@@ -1252,6 +1319,170 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎮 XO GAME ARENA\n\nAdd me to a group and use /play to choose a game!"
     )
 
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+}
+
+def arena_authorize(request, room_id):
+    init_data = request.headers.get("Authorization", "")
+    if init_data.startswith("tma "):
+        init_data = init_data[4:]
+
+    user = verify_telegram_init_data(init_data, os.getenv("XO_TOKEN"))
+    room = arena_rooms.get(room_id)
+
+    if not user or not room:
+        return None, None, web.json_response(
+            {"error": "Invalid session or room."}, status=401,
+            headers=CORS_HEADERS
+        )
+
+    uid = user.get("id")
+    key = request.query.get("key") or ""
+
+    if uid not in (room.get("p1"), room.get("p2")):
+        return None, None, web.json_response(
+            {"error": "You are not a player in this room."}, status=403,
+            headers=CORS_HEADERS
+        )
+
+    saved_key = room.get("arena_tokens", {}).get(uid, "")
+    if not saved_key or not hmac.compare_digest(key, saved_key):
+        return None, None, web.json_response(
+            {"error": "Invalid player key."}, status=403,
+            headers=CORS_HEADERS
+        )
+
+    return room, uid, None
+
+
+async def arena_options(request):
+    return web.Response(headers=CORS_HEADERS)
+
+
+async def arena_state(request):
+    room_id = request.query.get("room", "")
+    room, uid, error = arena_authorize(request, room_id)
+    if error:
+        return error
+
+    opponent = room["p2"] if uid == room["p1"] else room["p1"]
+    scores = room.setdefault("arena_scores", {})
+    scores.setdefault(room["p1"], 0)
+    scores.setdefault(room["p2"], 0)
+
+    history = []
+    for item in room.setdefault("arena_history", []):
+        history.append({
+            "round": item["round"],
+            "my_choice": item["choices"].get(uid),
+            "opponent_choice": item["choices"].get(opponent),
+            "winner": item["winner"],
+            "winner_name": item["winner_name"],
+        })
+
+    current = room.setdefault("arena_rounds", {}).setdefault(
+        str(room.setdefault("arena_round", 1)), {"choices": {}}
+    )
+
+    finished = max(scores.values(), default=0) >= 2
+
+    return web.json_response({
+        "ok": True,
+        "round": room["arena_round"],
+        "my_score": scores[uid],
+        "opponent_score": scores[opponent],
+        "my_choice_submitted": uid in current["choices"],
+        "waiting": uid in current["choices"] and len(current["choices"]) < 2,
+        "history": history,
+        "finished": finished,
+        "match_winner": (
+            room["p1"] if scores[room["p1"]] >= 2
+            else room["p2"] if scores[room["p2"]] >= 2
+            else None
+        ),
+    }, headers=CORS_HEADERS)
+
+
+async def arena_choice(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response(
+            {"error": "Invalid JSON."}, status=400, headers=CORS_HEADERS
+        )
+
+    room_id = str(data.get("room", ""))
+    request_copy = request.clone(
+        headers={**request.headers, "Authorization": request.headers.get("Authorization", "")}
+    )
+    room, uid, error = arena_authorize(request_copy, room_id)
+    if error:
+        return error
+
+    choice = data.get("choice")
+    if choice not in ("rock", "paper", "scissors"):
+        return web.json_response(
+            {"error": "Invalid choice."}, status=400, headers=CORS_HEADERS
+        )
+
+    scores = room.setdefault("arena_scores", {})
+    scores.setdefault(room["p1"], 0)
+    scores.setdefault(room["p2"], 0)
+
+    if max(scores.values(), default=0) >= 2:
+        return web.json_response(
+            {"error": "The match has finished."}, status=409,
+            headers=CORS_HEADERS
+        )
+
+    round_number = room.setdefault("arena_round", 1)
+    rounds = room.setdefault("arena_rounds", {})
+    current = rounds.setdefault(str(round_number), {"choices": {}})
+
+    if uid in current["choices"]:
+        return web.json_response(
+            {"error": "Your choice is already locked."}, status=409,
+            headers=CORS_HEADERS
+        )
+
+    current["choices"][uid] = choice
+
+    if len(current["choices"]) == 2:
+        choices = current["choices"]
+        a, b = choices[room["p1"]], choices[room["p2"]]
+
+        if a == b:
+            winner = None
+        elif (a, b) in (
+            ("rock", "scissors"), ("paper", "rock"), ("scissors", "paper")
+        ):
+            winner = room["p1"]
+        else:
+            winner = room["p2"]
+
+        if winner is not None:
+            scores[winner] += 1
+
+        room.setdefault("arena_history", []).append({
+            "round": round_number,
+            "choices": dict(choices),
+            "winner": winner,
+            "winner_name": room["names"].get(winner) if winner else "Draw",
+        })
+        room["arena_round"] = round_number + 1
+
+    return web.json_response({
+        "ok": True,
+        "submitted": True,
+        "round": round_number,
+        "waiting": len(current["choices"]) < 2,
+    }, headers=CORS_HEADERS)
+
+
 async def health(request):
     return web.json_response({"status": "ok", "service": "XO Arena"})
 
@@ -1259,6 +1490,10 @@ async def health(request):
 async def start_webserver(app):
     site_app = web.Application()
     site_app.router.add_get("/health", health)
+    site_app.router.add_get("/api/state", arena_state)
+    site_app.router.add_post("/api/choice", arena_choice)
+    site_app.router.add_route("OPTIONS", "/api/state", arena_options)
+    site_app.router.add_route("OPTIONS", "/api/choice", arena_options)
     runner = web.AppRunner(site_app)
     await runner.setup()
     port = int(os.getenv("PORT", "8080"))
