@@ -1,4 +1,5 @@
 import os, uuid, random
+from aiohttp import web
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from telegram import InputMediaPhoto
@@ -1251,11 +1252,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎮 XO GAME ARENA\n\nAdd me to a group and use /play to choose a game!"
     )
 
+async def health(request):
+    return web.json_response({"status": "ok", "service": "XO Arena"})
+
+
+async def start_webserver(app):
+    site_app = web.Application()
+    site_app.router.add_get("/health", health)
+    runner = web.AppRunner(site_app)
+    await runner.setup()
+    port = int(os.getenv("PORT", "8080"))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    app.bot_data["web_runner"] = runner
+    print(f"WEB SERVER RUNNING ON PORT {port}")
+
+
+async def stop_webserver(app):
+    runner = app.bot_data.get("web_runner")
+    if runner:
+        await runner.cleanup()
+
+
 def main():
     token = os.getenv("XO_TOKEN")
     if not token:
         raise RuntimeError("XO_TOKEN is missing!")
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(start_webserver).post_shutdown(stop_webserver).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play))
     app.add_handler(CommandHandler("end", end_game))
