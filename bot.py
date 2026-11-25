@@ -138,6 +138,7 @@ def td_pools():
 
 games = {}
 streaks = {}
+arena_rooms = {}
 
 def menu():
     return InlineKeyboardMarkup([
@@ -147,6 +148,7 @@ def menu():
         [InlineKeyboardButton("🔢 2048 Duel", callback_data="select:2048")],
         [InlineKeyboardButton("🔥 Truth or Dare", callback_data="select:td")],
         [InlineKeyboardButton("🕵️ Impostor", callback_data="select:impostor")],
+        [InlineKeyboardButton("⚡ RPS Arena", callback_data="select:rps_arena")],
     ])
 
 def join_menu():
@@ -630,6 +632,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "choices": {}, "names": {}
             })
             text = "✊ ROCK PAPER SCISSORS\n\nChoose points to win:"
+        elif q.data == "select:rps_arena":
+            g.update({
+                "type": "rps_arena", "p1": None, "p2": None,
+                "names": {}, "arena_choices": {}, "arena_scores": {}
+            })
+            text = "⚡ RPS ARENA\\n\\nA private-choice Rock Paper Scissors match!\\nTwo players can join. Both must start the bot privately first."
         elif q.data == "select:ludo":
             g.update({"type": "ludo", "players": [], "positions": {}, "names": {}, "turn": 0, "roll": None})
             text = "🎲 LUDO MINI\n\n2–4 players can join. Four tokens each. Join and wait for the creator to start!"
@@ -683,6 +691,10 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🙋 JOIN",callback_data="td:join")],
                 [InlineKeyboardButton("▶️ START",callback_data="td:start")]
+            ])
+        elif g["type"] == "rps_arena":
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 JOIN RPS ARENA", callback_data="arena:join")]
             ])
         elif g["type"] == "impostor":
             keyboard = InlineKeyboardMarkup([
