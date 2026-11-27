@@ -81,11 +81,14 @@ async function pick(choice){
  }finally{busy=false;}
 }
 function renderHistory(items){
- $("history").innerHTML=items.map(x=>{
+ $("history").replaceChildren();
+ items.forEach(x=>{
   const mine=x.my_choice||"—",theirs=x.opponent_choice||"—";
   const result=x.winner_name==="Draw"?"DRAW":x.winner_name;
-  return `<div>Round ${x.round}: ${mine.toUpperCase()} vs ${theirs.toUpperCase()} — ${result}</div>`;
- }).join("");
+  const line=document.createElement("div");
+  line.textContent=`Round ${x.round}: ${mine.toUpperCase()} vs ${theirs.toUpperCase()} — ${result}`;
+  $("history").appendChild(line);
+ });
 }
 async function refresh(){
  if(!room||!key||!initData){

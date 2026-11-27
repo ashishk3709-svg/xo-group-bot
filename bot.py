@@ -1,4 +1,5 @@
-import os, uuid, random
+import os, uuid, random, json, hmac, hashlib, time
+from urllib.parse import parse_qsl
 from aiohttp import web
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
@@ -340,7 +341,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=uid,
-                text="⚡ RPS ARENA\\n\\nYour private match link is ready. Wait for your opponent to join, then make your move!",
+                text="⚡ RPS ARENA\n\nYour private match link is ready. Wait for your opponent to join, then make your move!",
                 reply_markup=ReplyKeyboardMarkup([[
                     KeyboardButton(
                         "⚡ OPEN RPS ARENA",
@@ -361,13 +362,13 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if g.get("p2") is None:
-            text = f"⚡ RPS ARENA\\n\\n{name} joined!\\nWaiting for Player 2..."
+            text = f"⚡ RPS ARENA\n\n{name} joined!\nWaiting for Player 2..."
         else:
             arena_rooms[room_id] = g
             text = (
-                "⚡ RPS ARENA — MATCH READY!\\n\\n"
-                f"👤 {g['names'][g['p1']]}\\n"
-                f"👤 {g['names'][g['p2']]}\\n\\n"
+                "⚡ RPS ARENA — MATCH READY!\n\n"
+                f"👤 {g['names'][g['p1']]}\n"
+                f"👤 {g['names'][g['p2']]}\n\n"
                 "Both players: open your private Arena message!"
             )
 
@@ -637,7 +638,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "type": "rps_arena", "p1": None, "p2": None,
                 "names": {}, "arena_choices": {}, "arena_scores": {}
             })
-            text = "⚡ RPS ARENA\\n\\nA private-choice Rock Paper Scissors match!\\nTwo players can join. Both must start the bot privately first."
+            text = "⚡ RPS ARENA\n\nA private-choice Rock Paper Scissors match!\nTwo players can join. Both must start the bot privately first."
         elif q.data == "select:ludo":
             g.update({"type": "ludo", "players": [], "positions": {}, "names": {}, "turn": 0, "roll": None})
             text = "🎲 LUDO MINI\n\n2–4 players can join. Four tokens each. Join and wait for the creator to start!"
@@ -1331,6 +1332,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎮 XO GAME ARENA\n\nAdd me to a group and use /play to choose a game!"
     )
 
+
+
+def verify_telegram_init_data(init_data, bot_token):
+    if not init_data or not bot_token:
+        return None
+    try:
+        fields = dict(parse_qsl(init_data, keep_blank_values=True))
+        received_hash = fields.pop("hash", None)
+        if not received_hash:
+            return None
+        data_check_string = "\n".join(
+            f"{key}={value}" for key, value in sorted(fields.items())
+        )
+        secret_key = hmac.new(
+            b"WebAppData", bot_token.encode(), hashlib.sha256
+        ).digest()
+        calculated_hash = hmac.new(
+            secret_key, data_check_string.encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(calculated_hash, received_hash):
+            return None
+        auth_date = int(fields.get("auth_date", "0"))
+        now = int(time.time())
+        if auth_date <= 0 or auth_date > now + 60 or now - auth_date > 86400:
+            return None
+        user = json.loads(fields.get("user", "{}"))
+        return user if isinstance(user, dict) and user.get("id") else None
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
