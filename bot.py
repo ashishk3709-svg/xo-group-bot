@@ -149,7 +149,6 @@ def menu():
         [InlineKeyboardButton("🔢 2048 Duel", callback_data="select:2048")],
         [InlineKeyboardButton("🔥 Truth or Dare", callback_data="select:td")],
         [InlineKeyboardButton("🕵️ Impostor", callback_data="select:impostor")],
-        [InlineKeyboardButton("⚡ RPS Arena", callback_data="select:rps_arena")],
     ])
 
 def join_menu():
