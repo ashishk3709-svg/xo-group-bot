@@ -146,6 +146,7 @@ def menu():
         [InlineKeyboardButton("❌⭕ Tic-Tac-Toe", callback_data="select:ttt")],
         [InlineKeyboardButton("✊ Rock Paper Scissors", callback_data="select:rps")],
         [InlineKeyboardButton("🔢 Number Guessing Battle", callback_data="select:num")],
+        [InlineKeyboardButton("💣 Minesweeper", callback_data="select:mine")],
         [InlineKeyboardButton("🔢 2048 Duel", callback_data="select:2048")],
         [InlineKeyboardButton("🔥 Truth or Dare", callback_data="select:td")],
         [InlineKeyboardButton("🕵️ Impostor", callback_data="select:impostor")],
@@ -701,6 +702,13 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🙋 JOIN IMPOSTOR", callback_data="imp:join")],
                 [InlineKeyboardButton("▶️ START GAME", callback_data="imp:start")]
             ])
+        elif g["type"] == "minesweeper":
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("⬛", callback_data=f"mine:open:{r*6+c}")
+                  for c in range(6)] for r in range(6)] +
+                [[InlineKeyboardButton("🚩 FLAG MODE" if g["mode"]=="flag" else "👆 REVEAL MODE", callback_data="mine:mode"),
+                  InlineKeyboardButton("🔄 RESTART", callback_data="mine:restart")]]
+            )
         elif g["type"] == "2048":
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬆️", callback_data="2048:up")],
@@ -960,6 +968,59 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🎲 ROLL DICE", callback_data="ludoroll")]
             ])
         )
+        return
+
+    if q.data.startswith("mine:"):
+        if not g or g.get("type")!="minesweeper" or uid!=g["owner"]:
+            await q.answer("This isn't your game.", show_alert=True)
+            return
+        action=q.data.split(":")
+        if action[1]=="mode":
+            g["mode"]="flag" if g["mode"]=="open" else "open"
+        elif action[1]=="restart":
+            g.update({"mines":set(random.sample(range(36),6)),
+                      "revealed":set(),"flags":set(),"mode":"open","over":False})
+        elif action[1] in ("open","flag") and not g["over"]:
+            i=int(action[2])
+            if action[1]=="flag" or g["mode"]=="flag":
+                if i not in g["revealed"]:
+                    if i in g["flags"]: g["flags"].remove(i)
+                    else: g["flags"].add(i)
+            elif i not in g["flags"] and i not in g["revealed"]:
+                if i in g["mines"]:
+                    g["over"]=True
+                else:
+                    todo=[i]
+                    while todo:
+                        x=todo.pop()
+                        if x in g["revealed"] or x in g["mines"]: continue
+                        g["revealed"].add(x)
+                        r,c=divmod(x,6)
+                        near=[rr*6+cc for rr in range(max(0,r-1),min(6,r+2))
+                              for cc in range(max(0,c-1),min(6,c+2)) if (rr,cc)!=(r,c)]
+                        count=sum(n in g["mines"] for n in near)
+                        if count==0: todo.extend(n for n in near if n not in g["revealed"])
+                if len(g["revealed"])==30: g["over"]=True
+        rows=[]
+        for r in range(6):
+            row=[]
+            for c in range(6):
+                i=r*6+c
+                if i in g["revealed"]: label="·"
+                elif g["over"] and i in g["mines"]: label="💣"
+                elif i in g["flags"]: label="🚩"
+                else: label="⬛"
+                if i in g["revealed"]:
+                    n=sum((rr*6+cc) in g["mines"] for rr in range(max(0,r-1),min(6,r+2))
+                          for cc in range(max(0,c-1),min(6,c+2)) if (rr,cc)!=(r,c))
+                    label=str(n) if n else "▫️"
+                row.append(InlineKeyboardButton(label,callback_data=f"mine:{g['mode']}:{i}"))
+            rows.append(row)
+        rows.append([InlineKeyboardButton("🚩 FLAG MODE" if g["mode"]=="flag" else "👆 REVEAL MODE",callback_data="mine:mode"),
+                     InlineKeyboardButton("🔄 RESTART",callback_data="mine:restart")])
+        status="💥 BOOM! Game over." if g["over"] and len(g["revealed"])!=30 else "🏆 YOU WIN!" if len(g["revealed"])==30 else f"🚩 Flags: {len(g['flags'])}/6"
+        await q.edit_message_text("💣 MINESWEEPER\\n━━━━━━━━━━━━\\n"+status,
+                                  reply_markup=InlineKeyboardMarkup(rows))
         return
 
     if q.data.startswith("2048:"):
