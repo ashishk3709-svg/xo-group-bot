@@ -658,6 +658,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "imp_phase": "lobby"
             })
             text = "🕵️ IMPOSTOR\n\nJoin the game! At least 3 players are needed.\nEveryone must open the bot privately and press START before joining."
+        elif q.data == "select:mine":
+            g.update({"type":"minesweeper","owner":uid,
+                      "mines":set(random.sample(range(36),6)),
+                      "revealed":set(),"flags":set(),"mode":"open","over":False})
+            text="💣 MINESWEEPER\n\nReveal safe tiles. Numbers show nearby mines. Switch to FLAG to mark suspected mines!"
         elif q.data == "select:2048":
             b = [[0]*4 for _ in range(4)]
             for _ in range(2):
